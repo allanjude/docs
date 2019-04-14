@@ -1,0 +1,18 @@
+{{ define "main" }}
+<span id="sidebar-toggle-span">
+<a href="#" id="sidebar-toggle" data-sidebar-toggle=""><i class="fa fa-bars"></i> navigation</a>
+</span>
+{{if .Site.Home.Content }} 
+{{.Site.Home.Content}}
+{{else}}
+	<h1>FreeBSD Documentation</h1>
+	<p>
+	    The site is working. Don't forget to customize this homepage with your own. You typically have 2 choices :
+	</p>
+	<ul>
+	  <li><b>1. </b> Create an _index.md document in the content folder</li>
+	  <li><b>2. </b> Configure your server to automatically redirect this home page to one of your documentation pages</li>
+	</ul>
+{{ end }}
+
+{{ end }}

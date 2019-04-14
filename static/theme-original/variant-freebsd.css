@@ -1,0 +1,109 @@
+
+:root{
+    --SIDE-MAIN-color:#A00000;
+    --SIDE-MAIN-TXT-color:black;
+    --MAIN-HOVER-color:#465400;
+    --SIDE-FOCUS-BACK-color:#AB2B28;
+    --SIDE-FOCUS-FORE-color:black;
+    --MENU-LINK-color:black;
+    --MENU-ACTIVE-BACK-color:#AB2B28;
+    --MENU-ACTIVE-LINK-color:#CCCCCC;
+    
+}
+a, #sidebar ul li.visited > a .read-icon {
+	color: var(--SIDE-MAIN-color);
+}
+a:hover {
+    color: var(--MAIN-HOVER-color);
+}
+#body a.highlight:after {
+    background-color: var(--MAIN-HOVER-color);
+}
+#sidebar {
+	background-color: var(--SIDE-MAIN-color);
+}
+#sidebar #header-wrapper {
+    background: var(--SIDE-MAIN-color);
+    color: var(--BF-color)
+    border-color: var(--SIDE-FOCUS-BACK-color);
+}
+#sidebar .searchbox {
+	border-color: var(--BF-color);
+    background: var(--SIDE-FOCUS-BACK-color);
+}
+#sidebar ul.topics > li.parent, #sidebar ul.topics > li.active {
+    background: var(--SIDE-FOCUS-BACK-color);
+}
+#sidebar .searchbox * {
+    color: var(--SIDE-FOCUS-FORE-color);
+}
+#sidebar a , #sidebar a:hover {
+    color: var(--MENU-LINK-color);
+}
+#sidebar .parent li, #sidebar .active li {
+    border-color: var(--MENU-ACTIVE-LINK-color);
+}
+#sidebar ul li.active > a {
+    background: var(--MENU-ACTIVE-BACK-color);
+    color: var(--MENU-ACTIVE-LINK-color) !important;
+}
+#sidebar ul li.active > div > a {
+    background: var(--MENU-ACTIVE-BACK-color);
+    color: var(--MENU-ACTIVE-LINK-color) !important;
+}
+#sidebar ul li.active > div > a:hover {
+    color: var(--MENU-HOVER-color) !important;
+}
+
+#sidebar ul.topics > li.parent a, #sidebar ul.topics > li.active a {
+    color: var(--SIDE-FOCUS-FORE-color);
+}
+
+#sidebar ul li .category-icon {
+	color: var(--MENU-LINK-color);
+}
+#sidebar #shortcuts h3 {
+    color: var(--SIDE-MAIN-TXT-color);
+}
+
+#sidebar hr {
+    border-bottom: 1px solid black;
+}
+
+#header-wrapper {
+    border-bottom: 1px solid black;
+}
+
+.footline {
+    border-color: var(--SIDE-FOCUS-BACK-color);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+}
+
+h2 {
+    font-size: 2.5rem;
+}
+
+h3 {
+    font-size: 2rem;
+}
+
+h4 {
+    font-size: 1.75rem;
+}
+
+h5 {
+    font-size: 1.5rem;
+}
+
+h6 {
+    font-size: 1.25rem;
+}
+
+span.command {
+    font-family: monospace;
+}
+
+
