@@ -1,0 +1,55 @@
+#baseURL = "https://docs.freebsd.org/"
+baseURL = "/bsd/handbook/"
+languageCode = "en-us"
+title = "FreeBSD Documentation"
+pluralizeListTitles = false
+theme = "docdock"
+publishDir = "public_html"
+
+defaultContentLanguage = "en"
+defaultContentLanguageInSubdir = true
+enableMissingTranslationPlaceholders = false
+
+pygmentsCodeFences = true
+pygmentsStyle = "monokailight"
+
+[Languages]
+[Languages.en]
+title = "Documentation for FreeBSD"
+weight = 1
+languageName = "English"
+
+#
+# [Languages.fr]
+# title = "Documentation du thème docDock"
+# weight = 2
+# languageName = "Français"
+
+[params]
+editURL = "https://github.com/freebsd/freebsd-docs/edit/master/content/"
+showVisitedLinks = true # default is false
+themeStyle = "original" # "original" or "flex" # default "flex"
+themeVariant = "freebsd" # choose theme variant "green", "gold" , "gray", "blue" (default)
+ordersectionsby = "weight" # ordersectionsby = "title"
+disableHomeIcon = false # default is false
+disableSearch = true # default is false
+disableNavChevron = false # set true to hide next/prev chevron, default is false
+highlightClientSide = false # set true to use highlight.pack.js instead of the default hugo chroma highlighter
+menushortcutsnewtab = false # set true to open shortcuts links to a new tab/window
+enableGitInfo = true
+
+[outputs]
+home = [ "HTML", "RSS"]
+
+[[menu.shortcuts]]
+pre = "<h3>External Links</h3>"
+name = "<i class='fa fa-github'></i> <label>Source Github</label>"
+identifier = "src"
+url = "https://github.com/freebsd/freebsd"
+weight = 10
+
+[[menu.shortcuts]]
+name = "<i class='fa fa-github'></i> <label>Documentation Github</label>"
+identifier = "doc"
+url = "https://github.com/freebsd/freebsd-docs"
+weight = 15
