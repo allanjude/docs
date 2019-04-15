@@ -1,0 +1,4 @@
+---
+title: "Capsicum"
+---
+The capsicum working group

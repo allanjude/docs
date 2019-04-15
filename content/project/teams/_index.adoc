@@ -1,0 +1,4 @@
+---
+title: "Teams"
+---
+Each team in the FreeBSD project has a page containing its charter, membership, and information about its current undertakings.

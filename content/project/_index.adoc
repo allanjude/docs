@@ -1,0 +1,6 @@
+---
+title: "Project"
+weight: 80
+---
+Here you will find information about the internal workings of the FreeBSD Project.
+

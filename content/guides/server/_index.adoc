@@ -1,0 +1,4 @@
+---
+title: "Server"
+---
+Guides to operating FreeBSD as a Server

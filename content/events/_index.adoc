@@ -1,0 +1,5 @@
+---
+title: "Events"
+weight: 60
+---
+Events around the FreeBSD Project

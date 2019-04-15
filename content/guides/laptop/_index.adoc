@@ -1,0 +1,4 @@
+---
+title: "Laptop"
+---
+Guides for running FreeBSD on a laptop or notebook computer

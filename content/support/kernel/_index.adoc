@@ -1,0 +1,4 @@
+---
+title: "Kernel"
+---
+Support and FAQ for the FreeBSD Kernel

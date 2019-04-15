@@ -1,0 +1,4 @@
+---
+title: "Desktop"
+---
+Guides for using FreeBSD as a desktop/workstation operating system

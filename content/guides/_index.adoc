@@ -1,0 +1,5 @@
+---
+title: "Guides"
+weight: 20
+---
+Guides and How-tos for FreeBSD
