@@ -9,7 +9,7 @@ publishDir = "public_html"
 metaDataFormat = "toml"
 hasCJKLanguage = true
 defaultContentLanguage = "en"
-defaultContentLanguageInSubdir = true
+defaultContentLanguageInSubdir = false
 enableMissingTranslationPlaceholders = false
 
 pygmentsCodeFences = true
