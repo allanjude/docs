@@ -1,0 +1,35 @@
+---
+title: Delegated Administration
+weight: 50
+---
+:toc:
+:toclevels: 5
+
+[[_zfs_zfs_allow]]
+==== Delegated Administration
+
+A comprehensive permission delegation system allows unprivileged users to perform [.acronym]#ZFS# administration functions.
+For example, if each user's home directory is a dataset, users can be given permission to create and destroy snapshots of their home directories.
+A backup user can be given permission to use replication features.
+A usage statistics script can be allowed to run with access only to the space utilization data for all users.
+It is even possible to delegate the ability to delegate permissions.
+Permission delegation is possible for each subcommand and most properties.
+
+[[_zfs_zfs_allow_create]]
+===== Delegating Dataset Creation
+
+[.command]#zfs allow
+	  someuser create
+	  mydataset# gives the specified user permission to create child datasets under the selected parent dataset.
+There is a caveat: creating a new dataset involves mounting it.
+That requires setting the FreeBSD `vfs.usermount` {{% manpage "sysctl" "8" %}} to `1` to allow non-root users to mount a file system.
+There is another restriction aimed at preventing abuse: non-[path]_root_	users must own the mountpoint where the file system is to be mounted.
+
+[[_zfs_zfs_allow_allow]]
+===== Delegating Permission Delegation
+
+[.command]#zfs allow
+	  someuser allow
+	  mydataset# gives the specified user the ability to assign any permission they have on the target dataset, or its children, to other users.
+If a user has the `snapshot` permission and the `allow` permission, that user can then grant the `snapshot` permission to other users.
+

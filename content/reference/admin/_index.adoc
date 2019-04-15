@@ -1,4 +1,4 @@
 ---
-title: "Operator"
+title: "Administrator"
 ---
 FreeBSD Administrator and Operator Reference Material

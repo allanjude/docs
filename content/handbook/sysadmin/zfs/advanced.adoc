@@ -1,0 +1,85 @@
+---
+title: Advanced Topics
+weight: 60
+---
+:toc:
+:toclevels: 5
+
+[[_zfs_advanced]]
+==== Advanced Topics
+
+[[_zfs_advanced_tuning]]
+===== Tuning
+
+There are a number of tunables that can be adjusted to make [.acronym]#ZFS# perform best for different workloads.
+
+ * _[var]``__vfs.zfs.arc_max__``_	    - Maximum size of the <<_zfs_term_arc,[.command]#ARC#>>. The default is all [.command]#RAM# less 1{nbsp}GB, or one half of [.command]#RAM#, whichever is more. However, a lower value should be used if the system will be running any other daemons or processes that may require memory. This value can be adjusted at runtime with {{% manpage "sysctl" "8" %}} and can be set in [path]_/boot/loader.conf_ or [path]_/etc/sysctl.conf_.
+ * _[var]``__vfs.zfs.arc_meta_limit__``_	    - Limit the portion of the <<_zfs_term_arc,[.command]#ARC#>>	    that can be used to store metadata. The default is one fourth of [var]``vfs.zfs.arc_max``. Increasing this value will improve performance if the workload involves operations on a large number of files and directories, or frequent metadata operations, at the cost of less file data fitting in the <<_zfs_term_arc,[.command]#ARC#>>. This value can be adjusted at runtime with {{% manpage "sysctl" "8" %}} and can be set in [path]_/boot/loader.conf_ or [path]_/etc/sysctl.conf_.
+ * _[var]``__vfs.zfs.arc_min__``_	    - Minimum size of the <<_zfs_term_arc,[.command]#ARC#>>. The default is one half of [var]``vfs.zfs.arc_meta_limit``. Adjust this value to prevent other applications from pressuring out the entire <<_zfs_term_arc,[.command]#ARC#>>. This value can be adjusted at runtime with {{% manpage "sysctl" "8" %}} and can be set in [path]_/boot/loader.conf_ or [path]_/etc/sysctl.conf_.
+ * _[var]``__vfs.zfs.vdev.cache.size__``_	    - A preallocated amount of memory reserved as a cache for each device in the pool. The total amount of memory used will be this value multiplied by the number of devices. This value can only be adjusted at boot time, and is set in [path]_/boot/loader.conf_.
+ * _[var]``__vfs.zfs.min_auto_ashift__``_	    - Minimum [var]``ashift`` (sector size) that will be used automatically at pool creation time. The value is a power of two. The default value of `9` represents ``2^9 = 512``, a sector size of 512 bytes. To avoid _write amplification_ and get the best performance, set this value to the largest sector size used by a device in the pool.
++
+Many drives have 4{nbsp}KB sectors.
+Using the default [var]``ashift`` of `9` with these drives results in write amplification on these devices.
+Data that could be contained in a single 4{nbsp}KB write must instead be written in eight 512-byte writes. [.acronym]#ZFS# tries to read the native sector size from all devices when creating a pool, but many drives with 4{nbsp}KB sectors report that their sectors are 512 bytes for compatibility.
+Setting [var]``vfs.zfs.min_auto_ashift`` to `12` (``2^12 = 4096``) before creating a pool forces [.acronym]#ZFS# to use 4{nbsp}KB blocks for best performance on these drives.
++
+Forcing 4{nbsp}KB blocks is also useful on pools where disk upgrades are planned.
+Future disks are likely to use 4{nbsp}KB sectors, and [var]``ashift`` values cannot be changed after a pool is created.
++
+In some specific cases, the smaller 512-byte block size might be preferable.
+When used with 512-byte disks for databases, or as storage for virtual machines, less data is transferred during small random reads.
+This can provide better performance, especially when using a smaller [.acronym]#ZFS# record size.
+ * _[var]``__vfs.zfs.prefetch_disable__``_	    - Disable prefetch. A value of `0` is enabled and `1` is disabled. The default is ``0``, unless the system has less than 4{nbsp}GB of [.command]#RAM#. Prefetch works by reading larger blocks than were requested into the <<_zfs_term_arc,[.command]#ARC#>>	    in hopes that the data will be needed soon. If the workload has a large number of random reads, disabling prefetch may actually improve performance by reducing unnecessary reads. This value can be adjusted at any time with {{% manpage "sysctl" "8" %}}.
+ * _[var]``__vfs.zfs.vdev.trim_on_init__``_	    - Control whether new devices added to the pool have the `TRIM` command run on them. This ensures the best performance and longevity for [.command]#SSD#s, but takes extra time. If the device has already been secure erased, disabling this setting will make the addition of the new device faster. This value can be adjusted at any time with {{% manpage "sysctl" "8" %}}.
+ * _[var]``__vfs.zfs.vdev.max_pending__``_	    - Limit the number of pending I/O requests per device. A higher value will keep the device command queue full and may give higher throughput. A lower value will reduce latency. This value can be adjusted at any time with {{% manpage "sysctl" "8" %}}.
+ * _[var]``__vfs.zfs.top_maxinflight__``_	    - Maxmimum number of outstanding I/Os per top-level <<_zfs_term_vdev,vdev>>. Limits the depth of the command queue to prevent high latency. The limit is per top-level vdev, meaning the limit applies to each <<_zfs_term_vdev_mirror,mirror>>, <<_zfs_term_vdev_raidz,RAID-Z>>, or other vdev independently. This value can be adjusted at any time with {{% manpage "sysctl" "8" %}}.
+ * _[var]``__vfs.zfs.l2arc_write_max__``_	    - Limit the amount of data written to the <<_zfs_term_l2arc,[.command]#L2ARC#>>	    per second. This tunable is designed to extend the longevity of [.command]#SSD#s by limiting the amount of data written to the device. This value can be adjusted at any time with {{% manpage "sysctl" "8" %}}.
+ * _[var]``__vfs.zfs.l2arc_write_boost__``_	    - The value of this tunable is added to <<_zfs_advanced_tuning_l2arc_write_max,[var]``vfs.zfs.l2arc_write_max``>>	    and increases the write speed to the [.command]#SSD# until the first block is evicted from the <<_zfs_term_l2arc,[.command]#L2ARC#>>. This "`Turbo Warmup Phase`" is designed to reduce the performance loss from an empty <<_zfs_term_l2arc,[.command]#L2ARC#>>	    after a reboot. This value can be adjusted at any time with {{% manpage "sysctl" "8" %}}.
+ * _[var]``__vfs.zfs.scrub_delay__``_	    - Number of ticks to delay between each I/O during a <<_zfs_term_scrub,[.command]#scrub#>>. To ensure that a [.command]#scrub# does not interfere with the normal operation of the pool, if any other [.command]#I/O# is happening the [.command]#scrub# will delay between each command. This value controls the limit on the total [.acronym]##IOPS## (I/Os Per Second) generated by the [.command]#scrub#. The granularity of the setting is determined by the value of [var]``kern.hz``	    which defaults to 1000 ticks per second. This setting may be changed, resulting in a different effective [.acronym]##IOPS## limit. The default value is ``4``, resulting in a limit of: 1000{nbsp}ticks/sec / 4 = 250{nbsp}[.acronym]##IOPS##. Using a value of [replaceable]``20`` would give a limit of: 1000{nbsp}ticks/sec / 20 = 50{nbsp}[.acronym]##IOPS##. The speed of [.command]#scrub# is only limited when there has been recent activity on the pool, as determined by <<_zfs_advanced_tuning_scan_idle,[var]``vfs.zfs.scan_idle``>>. This value can be adjusted at any time with {{% manpage "sysctl" "8" %}}.
+ * _[var]``__vfs.zfs.resilver_delay__``_	    - Number of milliseconds of delay inserted between each I/O during a <<_zfs_term_resilver,resilver>>. To ensure that a resilver does not interfere with the normal operation of the pool, if any other I/O is happening the resilver will delay between each command. This value controls the limit of total [.acronym]##IOPS## (I/Os Per Second) generated by the resilver. The granularity of the setting is determined by the value of [var]``kern.hz`` which defaults to 1000 ticks per second. This setting may be changed, resulting in a different effective [.acronym]##IOPS## limit. The default value is 2, resulting in a limit of: 1000{nbsp}ticks/sec / 2 = 500{nbsp}[.acronym]##IOPS##. Returning the pool to an <<_zfs_term_online,Online>> state may be more important if another device failing could <<_zfs_term_faulted,Fault>> the pool, causing data loss. A value of 0 will give the resilver operation the same priority as other operations, speeding the healing process. The speed of resilver is only limited when there has been other recent activity on the pool, as determined by <<_zfs_advanced_tuning_scan_idle,[var]``vfs.zfs.scan_idle``>>. This value can be adjusted at any time with {{% manpage "sysctl" "8" %}}.
+ * _[var]``__vfs.zfs.scan_idle__``_	    - Number of milliseconds since the last operation before the pool is considered idle. When the pool is idle the rate limiting for <<_zfs_term_scrub,[.command]#scrub#>>	    and <<_zfs_term_resilver,resilver>> are disabled. This value can be adjusted at any time with {{% manpage "sysctl" "8" %}}.
+ * _[var]``__vfs.zfs.txg.timeout__``_	    - Maximum number of seconds between <<_zfs_term_txg,transaction group>>s. The current transaction group will be written to the pool and a fresh transaction group started if this amount of time has elapsed since the previous transaction group. A transaction group my be triggered earlier if enough data is written. The default value is 5 seconds. A larger value may improve read performance by delaying asynchronous writes, but this may cause uneven performance when the transaction group is written. This value can be adjusted at any time with {{% manpage "sysctl" "8" %}}.
+
+
+[[_zfs_advanced_i386]]
+===== [.acronym]#ZFS# on i386
+
+Some of the features provided by [.acronym]#ZFS#	are memory intensive, and may require tuning for maximum efficiency on systems with limited [.command]#RAM#.
+
+====== Memory
+
+As a bare minimum, the total system memory should be at least one gigabyte.
+The amount of recommended [.command]#RAM# depends upon the size of the pool and which [.acronym]#ZFS# features are used.
+A general rule of thumb is 1{nbsp}GB of RAM for every 1{nbsp}TB of storage.
+If the deduplication feature is used, a general rule of thumb is 5{nbsp}GB of RAM per TB of storage to be deduplicated.
+While some users successfully use [.acronym]#ZFS# with less [.command]#RAM#, systems under heavy load may panic due to memory exhaustion.
+Further tuning may be required for systems with less than the recommended RAM requirements.
+
+====== Kernel Configuration
+
+Due to the address space limitations of the i386(TM) platform, [.acronym]#ZFS# users on the i386(TM) architecture must add this option to a custom kernel configuration file, rebuild the kernel, and reboot:
+
+[source]
+----
+options        KVA_PAGES=512
+----
+
+This expands the kernel address space, allowing the [var]``vm.kvm_size`` tunable to be pushed beyond the currently imposed limit of 1{nbsp}GB, or the limit of 2{nbsp}GB for [.command]#PAE#.
+To find the most suitable value for this option, divide the desired address space in megabytes by four.
+In this example, it is `512` for 2{nbsp}GB.
+
+====== Loader Tunables
+
+The [path]_kmem_ address space can be increased on all FreeBSD architectures.
+On a test system with 1{nbsp}GB of physical memory, success was achieved with these options added to [path]_/boot/loader.conf_, and the system restarted:
+
+[source]
+----
+vm.kmem_size="330M"
+vm.kmem_size_max="330M"
+vfs.zfs.arc_max="40M"
+vfs.zfs.vdev.cache.size="5M"
+----
+
+For a more detailed list of recommendations for [.acronym]#ZFS#-related tuning, see https://wiki.freebsd.org/ZFSTuningGuide.

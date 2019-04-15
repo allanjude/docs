@@ -1,0 +1,19 @@
+---
+title: What Makes ZFS Different
+weight: 10
+---
+:toc:
+:toclevels: 5
+
+[[_zfs_differences]]
+==== What Makes [.acronym]#ZFS# Different
+
+[.acronym]#ZFS# is significantly different from any previous file system because it is more than just a file system.
+Combining the traditionally separate roles of volume manager and file system provides [.acronym]#ZFS# with unique advantages.
+The file system is now aware of the underlying structure of the disks.
+Traditional file systems could only be created on a single disk at a time.
+If there were two disks then two separate file systems would have to be created.
+In a traditional hardware [.command]#RAID# configuration, this problem was avoided by presenting the operating system with a single logical disk made up of the space provided by a number of physical disks, on top of which the operating system placed a file system.
+Even in the case of software [.command]#RAID# solutions like those provided by [.command]#GEOM#, the [.command]#UFS# file system living on top of the [.command]#RAID# transform believed that it was dealing with a single device. [.acronym]#ZFS#'s combination of the volume manager and the file system solves this and allows the creation of many file systems all sharing a pool of available storage.
+One of the biggest advantages to [.acronym]#ZFS#'s awareness of the physical layout of the disks is that existing file systems can be grown automatically when additional disks are added to the pool.
+This new space is then made available to all of the file systems. [.acronym]#ZFS# also has a number of different properties that can be applied to each file system, giving many advantages to creating a number of different file systems and datasets rather than a single monolithic file system.

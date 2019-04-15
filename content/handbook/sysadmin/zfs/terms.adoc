@@ -1,0 +1,449 @@
+---
+title: ZFS Features and Terminology
+weight: 80
+---
+[[_zfs_term]]
+==== [.acronym]#ZFS# Features and Terminology
+
+[.acronym]#ZFS# is a fundamentally different file system because it is more than just a file system. [.acronym]#ZFS# combines the roles of file system and volume manager, enabling additional storage devices to be added to a live system and having the new space available on all of the existing file systems in that pool immediately.
+By combining the traditionally separate roles, [.acronym]#ZFS# is able to overcome previous limitations that prevented [.acronym]##RAID## groups being able to grow.
+Each top level device in a pool is called a __vdev__, which can be a simple disk or a [.acronym]##RAID## transformation such as a mirror or [.acronym]##RAID-Z## array. [.acronym]#ZFS# file systems (called __datasets__) each have access to the combined free space of the entire pool.
+As blocks are allocated from the pool, the space available to each file system decreases.
+This approach avoids the common pitfall with extensive partitioning where free space becomes fragmented across the partitions.
+
+[cols="1,9"]
+|===
+
+a|pool
+a|A storage _pool_ is the most
+	      basic building block of [.acronym]#ZFS#.  A pool
+	      is made up of one or more vdevs, the underlying devices
+	      that store the data.  A pool is then used to create one
+	      or more file systems (datasets) or block devices
+	      (volumes).  These datasets and volumes share the pool of
+	      remaining free space.  Each pool is uniquely identified
+	      by a name and a [.command]#GUID#.  The features
+	      available are determined by the [.acronym]#ZFS#
+	      version number on the pool. 
+
+a|vdev{nbsp}Types
+a|A pool is made up of one or more vdevs, which themselves can be a single disk or a group of disks, in the case of a [.acronym]##RAID## transform.
+When multiple vdevs are used, [.acronym]##ZFS## spreads data across the vdevs to increase performance and maximize usable space.
+
+* _Disk_ - The most basic type of vdev is a standard block device. This can be an entire disk (such as [path]_/dev/ada0_		    or [path]_/dev/da0_) or a partition ([path]_/dev/ada0p3_). On FreeBSD, there is no performance penalty for using a partition rather than the entire disk. This differs from recommendations made by the Solaris documentation.
+* _File_ - In addition to disks, [.acronym]#ZFS#		    pools can be backed by regular files, this is especially useful for testing and experimentation. Use the full path to the file as the device path in [.command]#zpool create#. All vdevs must be at least 128{nbsp}MB in size.
+* _Mirror_ - When creating a mirror, specify the `mirror` keyword followed by the list of member devices for the mirror. A mirror consists of two or more devices, all data will be written to all member devices. A mirror vdev will only hold as much data as its smallest member. A mirror vdev can withstand the failure of all but one of its members without losing any data.
++
+
+[NOTE]
+====
+A regular single disk vdev can be upgraded to a mirror vdev at any time with [.command]##zpool attach##.
+====
+
+* _[.acronym]##RAID-Z##_		    - [.acronym]#ZFS# implements [.acronym]##RAID-Z##, a variation on standard [.acronym]##RAID-5## that offers better distribution of parity and eliminates the "`[.acronym]##RAID-5## write hole`" in which the data and parity information become inconsistent after an unexpected restart. [.acronym]#ZFS#		    supports three levels of [.acronym]##RAID-Z##		    which provide varying levels of redundancy in exchange for decreasing levels of usable storage. The types are named [.command]#RAID-Z1#		    through [.command]#RAID-Z3# based on the number of parity devices in the array and the number of disks which can fail while the pool remains operational.
++
+In a [.command]#RAID-Z1# configuration with four disks, each 1{nbsp}TB, usable storage is 3{nbsp}TB and the pool will still be able to operate in degraded mode with one faulted disk.
+If an additional disk goes offline before the faulted disk is replaced and resilvered, all data in the pool can be lost.
++
+In a [.command]#RAID-Z3# configuration with eight disks of 1{nbsp}TB, the volume will provide 5{nbsp}TB of usable space and still be able to operate with three faulted disks. Sun(TM)		    recommends no more than nine disks in a single vdev.
+If the configuration has more disks, it is recommended to divide them into separate vdevs and the pool data will be striped across them.
++
+A configuration of two [.command]#RAID-Z2# vdevs consisting of 8 disks each would create something similar to a [.command]#RAID-60# array.
+A [.acronym]##RAID-Z## group's storage capacity is approximately the size of the smallest disk multiplied by the number of non-parity disks.
+Four 1{nbsp}TB disks in [.command]#RAID-Z1#		    has an effective size of approximately 3{nbsp}TB, and an array of eight 1{nbsp}TB disks in [.command]#RAID-Z3# will yield 5{nbsp}TB of usable space.
+* _Spare_		    - [.acronym]#ZFS# has a special pseudo-vdev type for keeping track of available hot spares. Note that installed hot spares are not deployed automatically; they must manually be configured to replace the failed device using [.command]#zfs replace#.
+* _Log_		    - [.acronym]#ZFS# Log Devices, also known as [.acronym]#ZFS# Intent Log (<<_zfs_term_zil,[.command]#ZIL#>>) move the intent log from the regular pool devices to a dedicated device, typically an [.command]#SSD#. Having a dedicated log device can significantly improve the performance of applications with a high volume of synchronous writes, especially databases. Log devices can be mirrored, but [.acronym]##RAID-Z## is not supported. If multiple log devices are used, writes will be load balanced across them.
+* _Cache_		    - Adding a cache vdev to a pool will add the storage of the cache to the <<_zfs_term_l2arc,[.command]#L2ARC#>>. Cache devices cannot be mirrored. Since a cache device only stores additional copies of existing data, there is no risk of data loss.
+
+a| Transaction Group ([.acronym]##TXG##)
+a|Transaction Groups are the way changed blocks are
+	      grouped together and eventually written to the pool.
+	      Transaction groups are the atomic unit that [.acronym]#ZFS# uses to assert consistency.  Each
+	      transaction group is assigned a unique 64-bit
+	      consecutive identifier.  There can be up to three active
+	      transaction groups at a time, one in each of these three
+	      states: 
+* _Open_ - When a new transaction group is created, it is in the open state, and accepts new writes. There is always a transaction group in the open state, however the transaction group may refuse new writes if it has reached a limit. Once the open transaction group has reached a limit, or the <<_zfs_advanced_tuning_txg_timeout,[var]``vfs.zfs.txg.timeout``>>		    has been reached, the transaction group advances to the next state.
+* _Quiescing_ - A short state that allows any pending operations to finish while not blocking the creation of a new open transaction group. Once all of the transactions in the group have completed, the transaction group advances to the final state.
+* _Syncing_ - All of the data in the transaction group is written to stable storage. This process will in turn modify other data, such as metadata and space maps, that will also need to be written to stable storage. The process of syncing involves multiple passes. The first, all of the changed data blocks, is the biggest, followed by the metadata, which may take multiple passes to complete. Since allocating space for the data blocks generates new metadata, the syncing state cannot finish until a pass completes that does not allocate any additional space. The syncing state is also where _synctasks_ are completed. Synctasks are administrative operations, such as creating or destroying snapshots and datasets, that modify the uberblock are completed. Once the sync state is complete, the transaction group in the quiescing state is advanced to the syncing state.
+
+
+
+	      All administrative functions, such as <<_zfs_term_snapshot,[.command]#snapshot#>>
+	      are written as part of the transaction group.  When a
+	      synctask is created, it is added to the currently open
+	      transaction group, and that group is advanced as quickly
+	      as possible to the syncing state to reduce the
+	      latency of administrative commands.
+
+a|Adaptive Replacement Cache ([.acronym]##ARC##)
+a|[.acronym]#ZFS# uses an Adaptive Replacement
+	      Cache ([.acronym]##ARC##), rather than a more
+	      traditional Least Recently Used ([.command]#LRU#)
+	      cache.  An [.command]#LRU# cache is a simple list
+	      of items in the cache, sorted by when each object was
+	      most recently used.  New items are added to the top of
+	      the list.  When the cache is full, items from the
+	      bottom of the list are evicted to make room for more
+	      active objects.  An [.command]#ARC# consists of
+	      four lists; the Most Recently Used
+	      ([.command]#MRU#) and Most Frequently Used
+	      ([.command]#MFU#) objects, plus a ghost list for
+	      each.  These ghost lists track recently evicted objects
+	      to prevent them from being added back to the cache.
+	      This increases the cache hit ratio by avoiding objects
+	      that have a history of only being used occasionally.
+	      Another advantage of using both an [.command]#MRU# and [.command]#MFU# is
+	      that scanning an entire file system would normally evict
+	      all data from an [.command]#MRU# or [.command]#LRU# cache in favor of this freshly
+	      accessed content.  With [.acronym]#ZFS#, there is
+	      also an [.command]#MFU# that only tracks the most
+	      frequently used objects, and the cache of the most
+	      commonly accessed blocks remains.
+
+a|[.command]#L2ARC#
+a|[.command]#L2ARC# is the second level
+	      of the [.acronym]#ZFS# caching system.  The
+	      primary [.command]#ARC# is stored in [.command]#RAM#.  Since the amount of
+	      available [.command]#RAM# is often limited, [.acronym]#ZFS# can also use <<_zfs_term_vdev_cache,cache vdevs>>.
+	      Solid State Disks ([.command]#SSD#s) are often
+	      used as these cache devices due to their higher speed
+	      and lower latency compared to traditional spinning
+	      disks. [.command]#L2ARC# is entirely optional,
+	      but having one will significantly increase read speeds
+	      for files that are cached on the [.command]#SSD#
+	      instead of having to be read from the regular disks. [.command]#L2ARC# can also speed up <<_zfs_term_deduplication,deduplication>>
+	      because a [.command]#DDT# that does not fit in [.command]#RAM# but does fit in the [.command]#L2ARC# will be much faster than a [.command]#DDT# that must be read from disk.  The
+	      rate at which data is added to the cache devices is
+	      limited to prevent prematurely wearing out [.command]#SSD#s with too many writes.  Until the
+	      cache is full (the first block has been evicted to make
+	      room), writing to the [.command]#L2ARC# is
+	      limited to the sum of the write limit and the boost
+	      limit, and afterwards limited to the write limit.  A
+	      pair of {{% manpage "sysctl" "8" %}} values control these rate limits. <<_zfs_advanced_tuning_l2arc_write_max,[var]``vfs.zfs.l2arc_write_max``>>
+	      controls how many bytes are written to the cache per
+	      second, while <<_zfs_advanced_tuning_l2arc_write_boost,[var]``vfs.zfs.l2arc_write_boost``>>
+	      adds to this limit during the "`Turbo Warmup Phase`" (Write Boost).
+
+a|[.command]#ZIL#
+a|[.command]#ZIL# accelerates synchronous
+	      transactions by using storage devices like [.command]#SSD#s that are faster than those used
+	      in the main storage pool.  When an application requests
+	      a synchronous write (a guarantee that the data has been
+	      safely stored to disk rather than merely cached to be
+	      written later), the data is written to the faster [.command]#ZIL# storage, then later flushed out
+	      to the regular disks.  This greatly reduces latency and
+	      improves performance.  Only synchronous workloads like
+	      databases will benefit from a [.command]#ZIL#.
+	      Regular asynchronous writes such as copying files will
+	      not use the [.command]#ZIL# at all.
+
+a|Copy-On-Write
+a|Unlike a traditional file system, when data is
+	      overwritten on [.acronym]#ZFS#, the new data is
+	      written to a different block rather than overwriting the
+	      old data in place.  Only when this write is complete is
+	      the metadata then updated to point to the new location.
+	      In the event of a shorn write (a system crash or power
+	      loss in the middle of writing a file), the entire
+	      original contents of the file are still available and
+	      the incomplete write is discarded.  This also means that [.acronym]#ZFS# does not require a {{% manpage "fsck" "8" %}}
+	      after an unexpected shutdown.
+
+a|Dataset
+a|__Dataset__ is the generic term
+	      for a [.acronym]#ZFS# file system, volume,
+	      snapshot or clone.  Each dataset has a unique name in
+	      the format [replaceable]``poolname/path@snapshot``.
+	      The root of the pool is technically a dataset as well.
+	      Child datasets are named hierarchically like
+	      directories.  For example, [replaceable]``mypool/home``, the home
+	      dataset, is a child of [replaceable]``mypool``
+	      and inherits properties from it.  This can be expanded
+	      further by creating [replaceable]``mypool/home/user``.  This
+	      grandchild dataset will inherit properties from the
+	      parent and grandparent.  Properties on a child can be
+	      set to override the defaults inherited from the parents
+	      and grandparents.  Administration of datasets and their
+	      children can be <<_zfs_zfs_allow,delegated>>.
+
+a|File system
+a|A [.acronym]#ZFS# dataset is most often used
+	      as a file system.  Like most other file systems, a [.acronym]#ZFS# file system is mounted somewhere
+	      in the systems directory hierarchy and contains files
+	      and directories of its own with permissions, flags, and
+	      other metadata.
+
+a|Volume
+a|In additional to regular file system datasets, [.acronym]#ZFS# can also create volumes, which
+	      are block devices.  Volumes have many of the same
+	      features, including copy-on-write, snapshots, clones,
+	      and checksumming.  Volumes can be useful for running
+	      other file system formats on top of [.acronym]#ZFS#, such as [.command]#UFS#
+	      virtualization, or exporting [.command]#iSCSI#
+	      extents.
+
+a|Snapshot
+a|The <<_zfs_term_cow,copy-on-write>>
+	      ([.command]#COW#) design of [.acronym]#ZFS# allows for nearly instantaneous,
+	      consistent snapshots with arbitrary names.  After taking
+	      a snapshot of a dataset, or a recursive snapshot of a
+	      parent dataset that will include all child datasets, new
+	      data is written to new blocks, but the old blocks are
+	      not reclaimed as free space.  The snapshot contains
+	      the original version of the file system, and the live
+	      file system contains any changes made since the snapshot
+	      was taken.  No additional space is used.  As new data is
+	      written to the live file system, new blocks are
+	      allocated to store this data.  The apparent size of the
+	      snapshot will grow as the blocks are no longer used in
+	      the live file system, but only in the snapshot.  These
+	      snapshots can be mounted read only to allow for the
+	      recovery of previous versions of files.  It is also
+	      possible to <<_zfs_zfs_snapshot,rollback>> a live
+	      file system to a specific snapshot, undoing any changes
+	      that took place after the snapshot was taken.  Each
+	      block in the pool has a reference counter which keeps
+	      track of how many snapshots, clones, datasets, or
+	      volumes make use of that block.  As files and snapshots
+	      are deleted, the reference count is decremented.  When a
+	      block is no longer referenced, it is reclaimed as free
+	      space.  Snapshots can also be marked with a <<_zfs_zfs_snapshot,hold>>.  When a
+	      snapshot is held, any attempt to destroy it will return
+	      an `EBUSY` error.  Each snapshot can
+	      have multiple holds, each with a unique name.  The <<_zfs_zfs_snapshot,release>> command
+	      removes the hold so the snapshot can deleted.  Snapshots
+	      can be taken on volumes, but they can only be cloned or
+	      rolled back, not mounted independently.
+
+a|Clone
+a|Snapshots can also be cloned.  A clone is a
+	      writable version of a snapshot, allowing the file system
+	      to be forked as a new dataset.  As with a snapshot, a
+	      clone initially consumes no additional space.  As
+	      new data is written to a clone and new blocks are
+	      allocated, the apparent size of the clone grows.  When
+	      blocks are overwritten in the cloned file system or
+	      volume, the reference count on the previous block is
+	      decremented.  The snapshot upon which a clone is based
+	      cannot be deleted because the clone depends on it.  The
+	      snapshot is the parent, and the clone is the child.
+	      Clones can be __promoted__, reversing
+	      this dependency and making the clone the parent and the
+	      previous parent the child.  This operation requires no
+	      additional space.  Because the amount of space used by
+	      the parent and child is reversed, existing quotas and
+	      reservations might be affected.
+
+a|Checksum
+a|[[_zfs_term_checksum]]Every block that is allocated is also checksummed.
+	      The checksum algorithm used is a per-dataset property,
+	      see <<_zfs_zfs_set,[.command]#set#>>.
+	      The checksum of each block is transparently validated as
+	      it is read, allowing [.acronym]#ZFS# to detect
+	      silent corruption.  If the data that is read does not
+	      match the expected checksum, [.acronym]#ZFS# will
+	      attempt to recover the data from any available
+	      redundancy, like mirrors or [.acronym]##RAID-Z##).
+	      Validation of all checksums can be triggered with <<_zfs_term_scrub,[.command]#scrub#>>.
+	      Checksum algorithms include: 
+********************************** `fletcher2`
+********************************** `fletcher4`
+********************************** `sha256`
+
+
+
+	      The `fletcher` algorithms are faster,
+	      but `sha256` is a strong cryptographic
+	      hash and has a much lower chance of collisions at the
+	      cost of some performance.  Checksums can be disabled,
+	      but it is not recommended.
+
+a|Compression
+a|Each dataset has a compression property, which
+	      defaults to off.  This property can be set to one of a
+	      number of compression algorithms.  This will cause all
+	      new data that is written to the dataset to be
+	      compressed.  Beyond a reduction in space used, read and
+	      write throughput often increases because fewer blocks
+	      are read or written. 
+********************************** _[.command]#LZ4#_ - Added in [.acronym]#ZFS# pool version 5000 (feature flags), [.command]#LZ4# is now the recommended compression algorithm. [.command]#LZ4# compresses approximately 50% faster than [.command]#LZJB# when operating on compressible data, and is over three times faster when operating on uncompressible data. [.command]#LZ4# also decompresses approximately 80% faster than [.command]#LZJB#. On modern [.command]#CPU#s, [.command]#LZ4#		    can often compress at over 500{nbsp}MB/s, and decompress at over 1.5{nbsp}GB/s (per single CPU core).
+********************************** _[.command]#LZJB#_ - The default compression algorithm. Created by Jeff Bonwick (one of the original creators of [.acronym]#ZFS#). [.command]#LZJB#		    offers good compression with less [.command]#CPU# overhead compared to [.command]#GZIP#. In the future, the default compression algorithm will likely change to [.command]#LZ4#.
+********************************** _[.command]#GZIP#_ - A popular stream compression algorithm available in [.acronym]#ZFS#. One of the main advantages of using [.command]#GZIP# is its configurable level of compression. When setting the `compress` property, the administrator can choose the level of compression, ranging from ``gzip1``, the lowest level of compression, to ``gzip9``, the highest level of compression. This gives the administrator control over how much [.command]#CPU# time to trade for saved disk space.
+********************************** _[.command]#ZLE#_ - Zero Length Encoding is a special compression algorithm that only compresses continuous runs of zeros. This compression algorithm is only useful when the dataset contains large blocks of zeros.
+
+
+a|
+Copies
+a|When set to a value greater than 1, the `copies` property instructs [.acronym]#ZFS# to maintain multiple copies of
+	      each block in the <<_zfs_term_filesystem,File System>>
+	      or <<_zfs_term_volume,Volume>>.  Setting
+	      this property on important datasets provides additional
+	      redundancy from which to recover a block that does not
+	      match its checksum.  In pools without redundancy, the
+	      copies feature is the only form of redundancy.  The
+	      copies feature can recover from a single bad sector or
+	      other forms of minor corruption, but it does not protect
+	      the pool from the loss of an entire disk.
+
+a|Deduplication
+a|Checksums make it possible to detect duplicate
+	      blocks of data as they are written.  With deduplication,
+	      the reference count of an existing, identical block is
+	      increased, saving storage space.  To detect duplicate
+	      blocks, a deduplication table ([.command]#DDT#)
+	      is kept in memory.  The table contains a list of unique
+	      checksums, the location of those blocks, and a reference
+	      count.  When new data is written, the checksum is
+	      calculated and compared to the list.  If a match is
+	      found, the existing block is used.  The [.command]#SHA256# checksum algorithm is used
+	      with deduplication to provide a secure cryptographic
+	      hash.  Deduplication is tunable.  If `dedup` is ``on``, then
+	      a matching checksum is assumed to mean that the data is
+	      identical.  If `dedup` is set to ``verify``, then the data in the two
+	      blocks will be checked byte-for-byte to ensure it is
+	      actually identical.  If the data is not identical, the
+	      hash collision will be noted and the two blocks will be
+	      stored separately.  Because [.command]#DDT# must
+	      store the hash of each unique block, it consumes a very
+	      large amount of memory.  A general rule of thumb is
+	      5-6{nbsp}GB of ram per 1{nbsp}TB of deduplicated data).
+	      In situations where it is not practical to have enough [.command]#RAM# to keep the entire [.command]#DDT# in memory, performance will
+	      suffer greatly as the [.command]#DDT# must be
+	      read from disk before each new block is written.
+	      Deduplication can use [.command]#L2ARC# to store
+	      the [.command]#DDT#, providing a middle ground
+	      between fast system memory and slower disks.  Consider
+	      using compression instead, which often provides nearly
+	      as much space savings without the additional memory
+	      requirement.
+
+a|Scrub
+a|Instead of a consistency check like {{% manpage "fsck" "8" %}}, [.acronym]#ZFS# has [.command]#scrub#. [.command]#scrub# reads all data blocks stored on
+	      the pool and verifies their checksums against the known
+	      good checksums stored in the metadata.  A periodic check
+	      of all the data stored on the pool ensures the recovery
+	      of any corrupted blocks before they are needed.  A scrub
+	      is not required after an unclean shutdown, but is
+	      recommended at least once every three months.  The
+	      checksum of each block is verified as blocks are read
+	      during normal use, but a scrub makes certain that even
+	      infrequently used blocks are checked for silent
+	      corruption.  Data security is improved, especially in
+	      archival storage situations.  The relative priority of [.command]#scrub# can be adjusted with <<_zfs_advanced_tuning_scrub_delay,[var]``vfs.zfs.scrub_delay``>>
+	      to prevent the scrub from degrading the performance of
+	      other workloads on the pool.
+
+a|Dataset Quota
+a|[.acronym]#ZFS# provides very fast and
+	      accurate dataset, user, and group space accounting in
+	      addition to quotas and space reservations.  This gives
+	      the administrator fine grained control over how space is
+	      allocated and allows space to be reserved for critical
+	      file systems. 
+
+[.acronym]#ZFS# supports different types of quotas: the dataset quota, the <<_zfs_term_refquota,reference
+		  quota ([.command]#refquota#)>>, the <<_zfs_term_userquota,user
+		  quota>>, and the <<_zfs_term_groupquota,group
+		  quota>>.
+
+Quotas limit the amount of space that a dataset and all of its descendants, including snapshots of the dataset, child datasets, and the snapshots of those datasets, can consume.
+
+[NOTE]
+====
+Quotas cannot be set on volumes, as the `volsize` property acts as an implicit quota.
+====
+
+a|Reference
+	      Quota
+a|A reference quota limits the amount of space a
+	      dataset can consume by enforcing a hard limit.  However,
+	      this hard limit includes only space that the dataset
+	      references and does not include space used by
+	      descendants, such as file systems or snapshots.
+
+a|User
+	      Quota
+a|User quotas are useful to limit the amount of space
+	      that can be used by the specified user.
+
+a|Group
+	      Quota
+a|The group quota limits the amount of space that a
+	      specified group can consume.
+
+a|Dataset
+	      Reservation
+a|The `reservation` property makes
+	      it possible to guarantee a minimum amount of space for a
+	      specific dataset and its descendants.  If a 10{nbsp}GB
+	      reservation is set on [path]_storage/home/bob_, and another
+	      dataset tries to use all of the free space, at least
+	      10{nbsp}GB of space is reserved for this dataset.  If a
+	      snapshot is taken of [path]_storage/home/bob_, the space used by
+	      that snapshot is counted against the reservation.  The <<_zfs_term_refreservation,`refreservation`>>
+	      property works in a similar way, but it _excludes_ descendants like
+	      snapshots. 
+
+Reservations of any sort are useful in many situations, such as planning and testing the suitability of disk space allocation in a new system, or ensuring that enough space is available on file systems for audio logs or system recovery procedures and files.
+
+a|Reference
+	      Reservation
+a|The `refreservation` property
+	      makes it possible to guarantee a minimum amount of
+	      space for the use of a specific dataset _excluding_ its descendants.  This
+	      means that if a 10{nbsp}GB reservation is set on [path]_storage/home/bob_, and another
+	      dataset tries to use all of the free space, at least
+	      10{nbsp}GB of space is reserved for this dataset.  In
+	      contrast to a regular <<_zfs_term_reservation,reservation>>,
+	      space used by snapshots and descendant datasets is not
+	      counted against the reservation.  For example, if a
+	      snapshot is taken of [path]_storage/home/bob_, enough disk space
+	      must exist outside of the `refreservation` amount for the
+	      operation to succeed.  Descendants of the main data set
+	      are not counted in the `refreservation`
+	      amount and so do not encroach on the space set.
+
+a|Resilver
+a|When a disk fails and is replaced, the new disk
+	      must be filled with the data that was lost.  The process
+	      of using the parity information distributed across the
+	      remaining drives to calculate and write the missing data
+	      to the new drive is called __resilvering__.
+
+a|Online
+a|A pool or vdev in the `Online`
+	      state has all of its member devices connected and fully
+	      operational.  Individual devices in the `Online` state are functioning
+	      normally.
+
+a|Offline
+a|Individual devices can be put in an `Offline` state by the administrator if
+	      there is sufficient redundancy to avoid putting the pool
+	      or vdev into a <<_zfs_term_faulted,Faulted>> state.
+	      An administrator may choose to offline a disk in
+	      preparation for replacing it, or to make it easier to
+	      identify.
+
+a|Degraded
+a|A pool or vdev in the `Degraded`
+	      state has one or more disks that have been disconnected
+	      or have failed.  The pool is still usable, but if
+	      additional devices fail, the pool could become
+	      unrecoverable.  Reconnecting the missing devices or
+	      replacing the failed disks will return the pool to an <<_zfs_term_online,Online>> state
+	      after the reconnected or new device has completed the <<_zfs_term_resilver,Resilver>>
+	      process.
+
+a|Faulted
+a|A pool or vdev in the `Faulted`
+	      state is no longer operational.  The data on it can no
+	      longer be accessed.  A pool or vdev enters the `Faulted` state when the number of
+	      missing or failed devices exceeds the level of
+	      redundancy in the vdev.  If missing devices can be
+	      reconnected, the pool will return to a <<_zfs_term_online,Online>> state.  If
+	      there is insufficient redundancy to compensate for the
+	      number of failed disks, then the contents of the pool
+	      are lost and must be restored from backups.
+|===
+
