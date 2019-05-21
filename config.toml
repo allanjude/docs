@@ -27,7 +27,7 @@ weight = 2
 languageName = "eEpañol"
 
 [params]
-editURL = "https://github.com/freebsd/docs/edit/master/content/"
+editURL = "https://github.com/allanjude/docs/edit/master/content/"
 showVisitedLinks = false # default is false
 themeStyle = "original" # "original" or "flex" # default "flex"
 themeVariant = "freebsd" # choose theme variant "green", "gold" , "gray", "blue" (default)
