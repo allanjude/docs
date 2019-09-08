@@ -1,0 +1,1117 @@
+---
+title: "PPP"
+---
+[[_ppp_and_slip]]
+= PPP
+:doctype: book
+:sectnums:
+:toc: left
+:icons: font
+:experimental:
+:sourcedir: .
+:imagesdir: ./images
+
+[[_ppp_and_slip_synopsis]]
+== Synopsis
+
+(((PPP)))
+
+
+FreeBSD supports the Point-to-Point ([acronym]``PPP``) protocol which can be used to establish a network or Internet connection using a dial-up modem.
+This chapter describes how to configure modem-based communication services in FreeBSD.
+
+After reading this chapter, you will know:
+
+* How to configure, use, and troubleshoot a [acronym]``PPP`` connection.
+* How to set up [acronym]``PPP`` over Ethernet ([acronym]``PPPoE``).
+* How to set up [acronym]``PPP`` over [acronym]``ATM``	  ([acronym]``PPPoA``).
+
+(((PPP)))
+
+(((PPP,over Ethernet)))
+
+
+Before reading this chapter, you should:
+
+* Be familiar with basic network terminology.
+* Understand the basics and purpose of a dial-up connection and [acronym]``PPP``.
+
+
+[[_userppp]]
+== Configuring PPP
+
+
+FreeBSD provides built-in support for managing dial-up [acronym]``PPP`` connections using  {{< manpage "ppp" "8" >}}
+.
+The default FreeBSD kernel provides support for [path]``tun``
+ which is used to interact with a modem hardware.
+Configuration is performed by editing at least one configuration file, and configuration files containing examples are provided.
+Finally, [command]``ppp`` is used to start and manage connections.
+
+In order to use a [acronym]``PPP`` connection, the following items are needed:
+
+* A dial-up account with an Internet Service Provider ([acronym]``ISP``).
+* A dial-up modem.
+* The dial-up number for the [acronym]``ISP``.
+* The login name and password assigned by the [acronym]``ISP``.
+* The [acronym]``IP`` address of one or more [acronym]``DNS`` servers. Normally, the [acronym]``ISP`` provides these addresses. If it did not, FreeBSD can be configured to use [acronym]``DNS`` negotiation.
+
+
+If any of the required information is missing, contact the [acronym]``ISP``.
+
+The following information may be supplied by the [acronym]``ISP``, but is not necessary:
+
+* The [acronym]``IP`` address of the default gateway. If this information is unknown, the [acronym]``ISP`` will automatically provide the correct value during connection setup. When configuring [acronym]``PPP`` on FreeBSD, this address is referred to as ``HISADDR``.
+* The subnet mask. If the [acronym]``ISP`` has not provided one, [netmask]``255.255.255.255`` will be used in the  {{< manpage "ppp" "8" >}} configuration file.
+* {empty}
++
+If the [acronym]``ISP`` has assigned a static [acronym]``IP`` address and hostname, it should be input into the configuration file.
+Otherwise, this information will be automatically provided during connection setup.
+
+
+The rest of this section demonstrates how to configure FreeBSD for common [acronym]``PPP`` connection scenarios.
+The required configuration file is [path]``/etc/ppp/ppp.conf``
+ and additional files and examples are available in [path]``/usr/share/examples/ppp/``
+.
+
+[NOTE]
+====
+Throughout this section, many of the file examples display line numbers.
+These line numbers have been added to make it easier to follow the discussion and are not meant to be placed in the actual file.
+
+When editing a configuration file, proper indentation is important.
+Lines that end in a `:` start in the first column (beginning of the line) while all other lines should be indented as shown using spaces or tabs.
+====
+
+[[_userppp_staticip]]
+=== Basic Configuration
+
+(((PPP,with static IP
+	    addresses)))
+
+
+In order to configure a [acronym]``PPP`` connection, first edit [path]``/etc/ppp/ppp.conf``
+ with the dial-in information for the [acronym]``ISP``.
+This file is described as follows:
+
+[source]
+----
+1     default:
+2       set log Phase Chat LCP IPCP CCP tun command
+3       ident user-ppp VERSION
+4       set device /dev/cuau0
+5       set speed 115200
+6       set dial "ABORT BUSY ABORT NO\\sCARRIER TIMEOUT 5 \
+7                 \"\" AT OK-AT-OK ATE1Q0 OK \\dATDT\\T TIMEOUT 40 CONNECT"
+8       set timeout 180
+9       enable dns
+10
+11    provider:
+12      set phone "(123) 456 7890"
+13      set authname foo
+14      set authkey bar
+15      set timeout 300
+16      set ifaddr x.x.x.x/0 y.y.y.y/0 255.255.255.255 0.0.0.0
+17      add default HISADDR
+----
+
+Line 1:::
+Identifies the `default` entry.
+Commands in this entry (lines 2 through 9) are executed automatically when [command]``ppp``		  is run.
+
+Line 2:::
+Enables verbose logging parameters for testing the connection.
+Once the configuration is working satisfactorily, this line should be reduced to:
++
+
+
+[source]
+----
+set log phase tun
+----
+Line 3:::
+Displays the version of  {{< manpage "ppp" "8" >}}
+to the [acronym]``PPP`` software running on the other side of the  connection.
+
+Line 4:::
+Identifies the device to which the modem is connected, where  [path]``COM1``
+is [path]``/dev/cuau0``
+and [path]``COM2``
+is [path]``/dev/cuau1``
+.
+
+Line 5:::
+Sets the connection speed.
+If `115200` does not work on an older modem, try `38400` instead.
+
+Lines 6 & 7:::
+The dial string written as an expect-send syntax.
+Refer to  {{< manpage "chat" "8" >}}
+for more information.
++
+Note that this command continues onto the next line for readability.
+Any command in [path]``ppp.conf``
+may do this if the last character on the line is ``\``.
+
+Line 8:::
+Sets the idle timeout for the link in seconds.
+
+Line 9:::
+Instructs the peer to confirm the [acronym]``DNS`` settings.
+If the local network is running its own [acronym]``DNS``		  server, this line should be commented out, by adding a `\#` at the beginning of the line, or removed.
+
+Line 10:::
+A blank line for readability.
+Blank lines are ignored by  {{< manpage "ppp" "8" >}}
+.
+
+Line 11:::
+Identifies an entry called ``provider``.
+This could be changed to the name of the [acronym]``ISP`` so that [option]``load
+[replaceable]``ISP```` can be used to start the connection.
+
+Line 12:::
+Use the phone number for the [acronym]``ISP``.
+Multiple phone numbers may be specified using the colon (``:``) or pipe character (``|``) as a separator.
+To rotate through the numbers, use a colon.
+To always attempt to dial the first number first and only use the other numbers if the first number fails, use the pipe character.
+Always enclose the entire set of phone numbers between quotation marks (``"``) to prevent dialing failures.
+
+Lines 13 & 14:::
+Use the user name and password for the [acronym]``ISP``.
+
+Line 15:::
+Sets the default idle timeout in seconds for the connection.
+In this example, the connection will be closed automatically after 300 seconds of inactivity.
+To prevent a timeout, set this value to zero.
+
+Line 16:::
+Sets the interface addresses.
+The values used depend upon whether a static [acronym]``IP``		  address has been obtained from the [acronym]``ISP`` or if it  instead negotiates a dynamic [acronym]``IP`` address during connection.
++
+If the  [acronym]``ISP`` has allocated a static [acronym]``IP`` address and default gateway, replace [replaceable]``x.x.x.x``		  with the static  [acronym]``IP`` address and replace [replaceable]``y.y.y.y`` with the [acronym]``IP`` address of the default gateway.
+If the [acronym]``ISP`` has only provided a static [acronym]``IP`` address without a gateway address, replace [replaceable]``y.y.y.y`` with [netmask]``10.0.0.2/0``
+.
++
+If the [acronym]``IP`` address changes whenever a connection is made, change this line to the following value.
+This tells  {{< manpage "ppp" "8" >}}
+to use the [acronym]``IP`` Configuration Protocol ([acronym]``IPCP``) to negotiate a dynamic [acronym]``IP`` address:
++
+
+
+[source]
+----
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.255 0.0.0.0
+----
+Line 17:::
+Keep this line as-is as it adds a default route to the gateway.
+The `HISADDR` will automatically be replaced with the gateway address specified on line 16.
+It is important that this line appears after line 16.
+
+
+Depending upon whether  {{< manpage "ppp" "8" >}}
+ is started manually or automatically, a [path]``/etc/ppp/ppp.linkup``
+ may also need to be created which contains the following lines.
+This file is required when running [command]``ppp`` in [option]``-auto`` mode.
+This file is used after the connection has been established.
+At this point, the [acronym]``IP`` address will have been assigned and it is now be possible to add the routing table entries.
+When creating this file, make sure that [replaceable]``provider`` matches the value demonstrated in line 11 of [path]``ppp.conf``
+.
+
+[source]
+----
+provider:
+      add default HISADDR
+----
+
+
+This file is also needed when the default gateway address is "`guessed`"
+ in a static [acronym]``IP`` address configuration.
+In this case, remove line 17 from [path]``ppp.conf``
+ and create [path]``/etc/ppp/ppp.linkup``
+ with the above two lines.
+More examples for this file can be found in [path]``/usr/share/examples/ppp/``
+.
+
+By default, [command]``ppp`` must be run as [username]``root``
+.
+To change this default, add the account of the user who should run [command]``ppp`` to the [groupname]``network``
+ group in [path]``/etc/group``
+.
+
+Then, give the user access to one or more entries in [path]``/etc/ppp/ppp.conf``
+ with [command]``allow``.
+For example, to give [username]``fred``
+ and [username]``mary``
+	  permission to only the `provider:` entry, add this line to the `provider:`	  section:
+
+[source]
+----
+allow users fred mary
+----
+
+
+To give the specified users access to all entries, put that line in the `default` section instead.
+
+=== Advanced Configuration
+
+(((NetBIOS)))
+
+(((PPP,Microsoft extensions)))
+
+
+It is possible to configure PPP to supply DNS and NetBIOS nameserver addresses on demand.
+
+To enable these extensions with [acronym]``PPP`` version 1.x, the following lines might be added to the relevant section of [path]``/etc/ppp/ppp.conf``
+.
+
+[source]
+----
+enable msext
+set ns 203.14.100.1 203.14.100.2
+set nbns 203.14.100.5
+----
+
+
+And for [acronym]``PPP`` version 2 and above:
+
+[source]
+----
+accept dns
+set dns 203.14.100.1 203.14.100.2
+set nbns 203.14.100.5
+----
+
+
+This will tell the clients the primary and secondary name server addresses, and a NetBIOS nameserver host.
+
+In version 2 and above, if the `set
+	      dns` line is omitted, [acronym]``PPP`` will use the values found in [path]``/etc/resolv.conf``
+.
+
+[[_userppp_papnchap]]
+==== PAP and CHAP Authentication
+
+(((CHAP)))
+
+
+Some [acronym]``ISP``s set their system up so that the authentication part of the connection is done using either of the PAP or CHAP authentication mechanisms.
+If this is the case, the [acronym]``ISP`` will not give a 
+ prompt at connection, but will start talking [acronym]``PPP``	    immediately.
+
+PAP is less secure than CHAP, but security is not normally an issue here as passwords, although being sent as plain text with PAP, are being transmitted down a serial line only.
+There is not much room for crackers to "`eavesdrop`"
+.
+
+The following alterations must be made:
+
+[source]
+----
+13      set authname MyUserName
+14      set authkey MyPassword
+15      set login
+----
+
+Line 13:::
+This line specifies the PAP/CHAP user name.
+Insert the correct value for [replaceable]``MyUserName``.
+
+Line 14:::
+This line specifies the PAP/CHAP password
++
+
+(((password)))
+.
+Insert the correct value for [replaceable]``MyPassword``.
+You may want to add an additional line, such as:
++
+
+
+[source]
+----
+16      accept PAP
+----
++
+or
++
+
+
+[source]
+----
+16      accept CHAP
+----
++
+to make it obvious that this is the intention, but PAP and CHAP are both accepted by default.
+
+Line 15:::
+The [acronym]``ISP`` will not normally require a login to the server when using PAP or CHAP.
+Therefore, disable the "`set
+login`"
+string.
+
+
+[[_userppp_nat]]
+==== Using PPP Network Address Translation Capability
+
+(((PPP,NAT)))
+
+
+PPP has ability to use internal NAT without kernel diverting capabilities.
+This functionality may be enabled by the following line in [path]``/etc/ppp/ppp.conf``
+:
+
+[source]
+----
+nat enable yes
+----
+
+
+Alternatively, NAT may be enabled by command-line option ``-nat``.
+There is also [path]``/etc/rc.conf``
+ knob named ``ppp_nat``, which is enabled by default.
+
+When using this feature, it may be useful to include the following [path]``/etc/ppp/ppp.conf``
+ options to enable incoming connections forwarding:
+
+[source]
+----
+nat port tcp 10.0.0.2:ftp ftp
+nat port tcp 10.0.0.2:http http
+----
+
+
+or do not trust the outside at all
+
+[source]
+----
+nat deny_incoming yes
+----
+
+[[_userppp_final]]
+=== Final System Configuration
+
+
+While [command]``ppp`` is now configured, some edits still need to be made to [path]``/etc/rc.conf``
+.
+
+Working from the top down in this file, make sure the `hostname=` line is set:
+
+[source]
+----
+hostname="foo.example.com"
+----
+
+
+If the [acronym]``ISP`` has supplied a static [acronym]``IP`` address and name, use this name as the host name.
+
+Look for the `network_interfaces`	  variable.
+To configure the system to dial the [acronym]``ISP`` on demand, make sure the [path]``tun0``
+ device is added to the list, otherwise remove it.
+
+[source]
+----
+network_interfaces="lo0 tun0"
+ifconfig_tun0=
+----
+
+[NOTE]
+====
+The `ifconfig_tun0` variable should be empty, and a file called [path]``/etc/start_if.tun0``
+ should be created.
+This file should contain the line:
+
+[source]
+----
+ppp -auto mysystem
+----
+
+This script is executed at network configuration time, starting the ppp daemon in automatic mode.
+If this machine acts as a gateway, consider including [option]``-alias``.
+Refer to the manual page for further details.
+====
+
+
+Make sure that the router program is set to `NO` with the following line in [path]``/etc/rc.conf``
+:
+
+[source]
+----
+router_enable="NO"
+----
+
+(((routed)))
+
+
+It is important that the [command]``routed``	  daemon is not started, as [command]``routed`` tends to delete the default routing table entries created by [command]``ppp``.
+
+It is probably a good idea to ensure that the `sendmail_flags` line does not include the [option]``-q`` option, otherwise [command]``sendmail`` will attempt to do a network lookup every now and then, possibly causing your machine to dial out.
+You may try:
+
+[source]
+----
+sendmail_flags="-bd"
+----
+
+(((sendmail)))
+
+
+The downside is that [command]``sendmail`` is forced to re-examine the mail queue whenever the ppp link.
+To automate this, include [command]``!bg`` in [path]``ppp.linkup``
+:
+
+[source]
+----
+1     provider:
+2       delete ALL
+3       add 0 0 HISADDR
+4       !bg sendmail -bd -q30m
+----
+
+(((SMTP)))
+
+
+An alternative is to set up a "`dfilter`"
+ to block SMTP traffic.
+Refer to the sample files for further details.
+
+=== Using ppp
+
+
+All that is left is to reboot the machine.
+After rebooting, either type:
+
+----
+# ppp
+----
+
+
+and then [command]``dial provider`` to start the [acronym]``PPP`` session, or, to configure [command]``ppp`` to establish sessions automatically when there is outbound traffic and [path]``start_if.tun0``
+ does not exist, type:
+
+----
+# ppp -auto provider
+----
+
+
+It is possible to talk to the [command]``ppp``	    program while it is running in the background, but only if a suitable diagnostic port has been set up.
+To do this, add the following line to the configuration:
+
+[source]
+----
+set server /var/run/ppp-tun%d DiagnosticPassword 0177
+----
+
+
+This will tell PPP to listen to the specified UNIX(R) domain socket, asking clients for the specified password before allowing access.
+The `%d` in the name is replaced with the [path]``tun``
+ device number that is in use.
+
+Once a socket has been set up, the  {{< manpage "pppctl" "8" >}}
+	  program may be used in scripts that wish to manipulate the running program.
+
+[[_userppp_mgetty]]
+=== Configuring Dial-in Services
+
+(((mgetty)))
+
+(((AutoPPP)))
+
+(((LCP)))
+
+<<_dialup>> provides a good description on enabling dial-up services using  {{< manpage "getty" "8" >}}
+.
+
+An alternative to [command]``getty`` is [package]#comms/mgetty+sendfax#
+	    port), a smarter version of [command]``getty``	    designed with dial-up lines in mind.
+
+The advantages of using [command]``mgetty`` is that it actively _talks_ to modems, meaning if port is turned off in [path]``/etc/ttys``
+ then the modem will not answer the phone.
+
+Later versions of [command]``mgetty`` (from 0.99beta onwards) also support the automatic detection of [acronym]``PPP`` streams, allowing clients scriptless access to the server.
+
+Refer to http://mgetty.greenie.net/doc/mgetty_toc.html	    for more information on [command]``mgetty``.
+
+By default the [package]#comms/mgetty+sendfax#
+	    port comes with the `AUTO_PPP` option enabled allowing [command]``mgetty`` to detect the LCP phase of [acronym]``PPP`` connections and automatically spawn off a ppp shell.
+However, since the default login/password sequence does not occur it is necessary to authenticate users using either PAP or CHAP.
+
+This section assumes the user has successfully compiled, and installed the [package]#comms/mgetty+sendfax#
+ port on his system.
+
+Ensure that [path]``/usr/local/etc/mgetty+sendfax/login.config``
+	    has the following:
+
+[source]
+----
+/AutoPPP/ -     - /etc/ppp/ppp-pap-dialup
+----
+
+
+This tells [command]``mgetty`` to run [path]``ppp-pap-dialup``
+ for detected [acronym]``PPP`` connections.
+
+Create an executable file called [path]``/etc/ppp/ppp-pap-dialup``
+ containing the following:
+
+[source]
+----
+#!/bin/sh
+exec /usr/sbin/ppp -direct pap$IDENT
+----
+
+
+For each dial-up line enabled in [path]``/etc/ttys``
+, create a corresponding entry in [path]``/etc/ppp/ppp.conf``
+.
+This will happily co-exist with the definitions we created above.
+
+[source]
+----
+pap:
+  enable pap
+  set ifaddr 203.14.100.1 203.14.100.20-203.14.100.40
+  enable proxy
+----
+
+
+Each user logging in with this method will need to have a username/password in [path]``/etc/ppp/ppp.secret``
+, or alternatively add the following option to authenticate users via PAP from [path]``/etc/passwd``
+.
+
+[source]
+----
+enable passwdauth
+----
+
+
+To assign some users a static [acronym]``IP``	    number, specify the number as the third argument in [path]``/etc/ppp/ppp.secret``
+.
+See [path]``/usr/share/examples/ppp/ppp.secret.sample``
+	    for examples.
+
+[[_ppp_troubleshoot]]
+== Troubleshooting PPP Connections
+
+(((PPP,troubleshooting)))
+
+
+This section covers a few issues which may arise when using [acronym]``PPP`` over a modem connection.
+Some [acronym]``ISP``s present the `ssword` prompt while others present ``password``.
+If the [command]``ppp`` script is not written accordingly, the login attempt will fail.
+The most common way to debug [command]``ppp`` connections is by connecting manually as described in this section.
+
+=== Check the Device Nodes
+
+
+When using a custom kernel, make sure to include the following line in the kernel configuration file:
+
+[source]
+----
+device   uart
+----
+
+
+The [path]``uart``
+ device is already included in the `GENERIC` kernel, so no additional steps are necessary in this case.
+Just check the [command]``dmesg`` output for the modem device with:
+
+----
+# dmesg | grep uart
+----
+
+
+This should display some pertinent output about the [path]``uart``
+ devices.
+These are the COM ports we need.
+If the modem acts like a standard serial port, it should be listed on [path]``uart1``
+, or [path]``COM2``
+.
+If so, a kernel rebuild is not required.
+When matching up, if the modem is on [path]``uart1``
+, the modem device would be [path]``/dev/cuau1``
+.
+
+=== Connecting Manually
+
+
+Connecting to the Internet by manually controlling [command]``ppp`` is quick, easy, and a great way to debug a connection or just get information on how the [acronym]``ISP`` treats [command]``ppp`` client connections.
+Lets start [app]``PPP`` from the command line.
+Note that in all of our examples we will use _example_ as the hostname of the machine running [app]``PPP``.
+To start [command]``ppp``:
+
+----
+# ppp
+----
+
+----
+ppp ON example>set device /dev/cuau1
+----
+
+
+This second command sets the modem device to [path]``cuau1``
+.
+
+----
+ppp ON example>set speed 115200
+----
+
+
+This sets the connection speed to 115,200 [acronym]``kbps``.
+
+----
+ppp ON example>enable dns
+----
+
+
+This tells [command]``ppp`` to configure the resolver and add the nameserver lines to [path]``/etc/resolv.conf``
+.
+If [command]``ppp`` cannot determine the hostname, it can manually be set later.
+
+----
+ppp ON example>term
+----
+
+
+This switches to "`terminal`"
+ mode in order to manually control the modem.
+
+[source]
+----
+deflink: Entering terminal mode on /dev/cuau1
+type '~h' for help
+----
+
+----
+atOKatdt123456789
+----
+
+
+Use [command]``at`` to initialize the modem, then use [command]``atdt`` and the number for the [acronym]``ISP`` to begin the dial in process.
+
+----
+CONNECT
+----
+
+
+Confirmation of the connection, if we are going to have any connection problems, unrelated to hardware, here is where we will attempt to resolve them.
+
+----
+ISP Login:myusername
+----
+
+
+At this prompt, return the prompt with the username that was provided by the [acronym]``ISP``.
+
+----
+ISP Pass:mypassword
+----
+
+
+At this prompt, reply with the password that was provided by the [acronym]``ISP``.
+Just like logging into FreeBSD, the password will not echo.
+
+----
+Shell or PPP:ppp
+----
+
+
+Depending on the [acronym]``ISP``, this prompt might not appear.
+If it does, it is asking whether to use a shell on the provider or to start [command]``ppp``.
+In this example, [command]``ppp`` was selected in order to establish an Internet connection.
+
+----
+Ppp ON example>
+----
+
+
+Notice that in this example the first [option]``p``	has been capitalized.
+This shows that we have successfully connected to the [acronym]``ISP``.
+
+----
+PPp ON example>
+----
+
+
+We have successfully authenticated with our [acronym]``ISP`` and are waiting for the assigned [acronym]``IP`` address.
+
+----
+PPP ON example>
+----
+
+
+We have made an agreement on an [acronym]``IP``	address and successfully completed our connection.
+
+----
+PPP ON example>add default HISADDR
+----
+
+
+Here we add our default route, we need to do this before we can talk to the outside world as currently the only established connection is with the peer.
+If this fails due to existing routes, put a bang character `!` in front of the [option]``add``.
+Alternatively, set this before making the actual connection and it will negotiate a new route accordingly.
+
+If everything went good we should now have an active connection to the Internet, which could be thrown into the background using kbd:[CTRL+z]
+ If [command]``PPP``	returns to [command]``ppp`` then the connection has bee lost.
+This is good to know because it shows the connection status.
+Capital P's represent a connection to the [acronym]``ISP`` and lowercase p's show that the connection has been lost.
+
+=== Debugging
+
+
+If a connection cannot be established, turn hardware flow [acronym]``CTS/RTS`` to off using [option]``set
+	    ctsrts off``.
+This is mainly the case when connected to some [app]``PPP``-capable terminal servers, where [app]``PPP`` hangs when it tries to write data to the communication link, and waits for a Clear To Send ([acronym]``CTS``) signal which may never come.
+When using this option, include [option]``set accmap`` as it may be required to defeat hardware dependent on passing certain characters from end to end, most of the time XON/XOFF.
+Refer to  {{< manpage "ppp" "8" >}}
+ for more information on this option and how it is used.
+
+An older modem may need [option]``set parity
+	    even``.
+Parity is set at none be default, but is used for error checking with a large increase in traffic, on older modems.
+
+[app]``PPP`` may not return to the command mode, which is usually a negotiation error where the [acronym]``ISP`` is waiting for negotiating to begin.
+At this point, using  [command]``~p`` will force ppp to start sending the configuration information.
+
+If a login prompt never appears, [acronym]``PAP``	  or [acronym]``CHAP`` authentication is most likely required.
+To use [acronym]``PAP`` or [acronym]``CHAP``, add the following options to [app]``PPP`` before going into terminal mode:
+
+----
+ppp ON example>set authname myusername
+----
+
+
+Where [replaceable]``myusername`` should be replaced with the username that was assigned by the [acronym]``ISP``.
+
+----
+ppp ON example>set authkey mypassword
+----
+
+
+Where [replaceable]``mypassword`` should be replaced with the password that was assigned by the [acronym]``ISP``.
+
+If a connection is established, but cannot seem to find any domain name,  try to  {{< manpage "ping" "8" >}}
+ an [acronym]``IP`` address.
+If there is 100 percent (100%) packet loss, it is likely that a default route was not assigned.
+Double check that [option]``add default
+	    HISADDR`` was set during the connection.
+If a connection can be made to a remote [acronym]``IP``	  address, it is possible that a resolver address has not been added to [path]``/etc/resolv.conf``
+.
+This file should look like:
+
+[source]
+----
+domain example.com
+nameserver x.x.x.x
+nameserver y.y.y.y
+----
+
+
+Where [replaceable]``x.x.x.x`` and [replaceable]``y.y.y.y`` should be replaced with the [acronym]``IP`` address of the [acronym]``ISP``'s DNS servers.
+
+To configure  {{< manpage "syslog" "3" >}}
+ to provide logging for the [app]``PPP`` connection, make sure this line exists in [path]``/etc/syslog.conf``
+:
+
+[source]
+----
+!ppp
+*.*     /var/log/ppp.log
+----
+
+[[_pppoe]]
+== Using PPP over Ethernet (PPPoE)
+
+
+This section describes how to set up [acronym]``PPP`` over Ethernet ([acronym]``PPPoE``).
+
+Here is an example of a working [path]``ppp.conf``
+:
+
+[source]
+----
+default:
+  set log Phase tun command # you can add more detailed logging if you wish
+  set ifaddr 10.0.0.1/0 10.0.0.2/0
+
+name_of_service_provider:
+  set device PPPoE:xl1 # replace xl1 with your Ethernet device
+  set authname YOURLOGINNAME
+  set authkey YOURPASSWORD
+  set dial
+  set login
+  add default HISADDR
+----
+
+
+As [username]``root``
+, run:
+
+----
+# ppp -ddial name_of_service_provider
+----
+
+
+Add the following to [path]``/etc/rc.conf``
+:
+
+[source]
+----
+ppp_enable="YES"
+ppp_mode="ddial"
+ppp_nat="YES"	# if you want to enable nat for your local network, otherwise NO
+ppp_profile="name_of_service_provider"
+----
+
+=== Using a PPPoE Service Tag
+
+
+Sometimes it will be necessary to use a service tag to establish the connection.
+Service tags are used to distinguish between different PPPoE servers attached to a given network.
+
+Any required service tag information should be in the documentation provided by the [acronym]``ISP``.
+
+As a last resort, one could try installing the [package]#net/rr-pppoe#
+ package or port.
+Bear in mind however, this may de-program your modem and render it useless, so think twice before doing it.
+Simply install the program shipped with the modem.
+Then, access the menu:System[]
+ menu from the program.
+The name of the profile should be listed there.
+It is usually __ISP__.
+
+The profile name (service tag) will be used in the PPPoE configuration entry in [path]``ppp.conf``
+ as the provider part for [command]``set device``.
+Refer to  {{< manpage "ppp" "8" >}}
+ for full details.
+It should look like this:
+
+[source]
+----
+set device PPPoE:xl1:ISP
+----
+
+
+Do not forget to change [replaceable]``xl1`` to the proper device for the Ethernet card.
+
+Do not forget to change [replaceable]``ISP`` to the profile.
+
+For additional information, refer to http://renaud.waldura.com/doc/freebsd/pppoe/[Cheaper
+	  Broadband with FreeBSD on DSL] by Renaud Waldura.
+
+[[_ppp_3com]]
+=== PPPoE with a 3Com HomeConnect ADSL Modem Dual Link
+
+
+This modem does not follow the PPPoE specification defined in http://www.faqs.org/rfcs/rfc2516.html[RFC
+	  2516].
+
+In order to make FreeBSD capable of communicating with this device, a sysctl must be set.
+This can be done automatically at boot time by updating [path]``/etc/sysctl.conf``
+:
+
+[source]
+----
+net.graph.nonstandard_pppoe=1
+----
+
+
+or can be done immediately with the command:
+
+----
+# sysctl net.graph.nonstandard_pppoe=1
+----
+
+
+Unfortunately, because this is a system-wide setting, it is not possible to talk to a normal PPPoE client or server and a 3Com(TM)HomeConnect(TM)
+ ADSL Modem at the same time.
+
+[[_pppoa]]
+== Using PPP over ATM (PPPoA)
+
+(((PPP,over ATM)))
+
+
+The following describes how to set up PPP over [acronym]``ATM`` (PPPoA).  PPPoA is a popular choice among European DSL providers.
+
+=== Using mpd
+
+
+The [app]``mpd`` application can be used to connect to a variety of services, in particular PPTP services.
+It can be installed using the [package]#net/mpd5#
+ package or port.
+Many ADSL modems require that a PPTP tunnel is created between the modem and computer.
+
+Once installed, configure [app]``mpd``	to suit the provider's settings.
+The port places a set of sample configuration files which are well documented in [path]``/usr/local/etc/mpd/``
+.
+A complete guide to configure [app]``mpd`` is available in HTML format in [path]``/usr/ports/share/doc/mpd/``
+.
+Here is a sample configuration for connecting to an ADSL service with [app]``mpd``.
+The configuration is spread over two files, first the [path]``mpd.conf``
+:
+
+[NOTE]
+====
+This example [path]``mpd.conf``
+ only works with [app]``mpd`` 4.x.
+====
+
+[source]
+----
+default:
+    load adsl
+
+adsl:
+    new -i ng0 adsl adsl
+    set bundle authname username 
+    set bundle password password 
+    set bundle disable multilink
+
+    set link no pap acfcomp protocomp
+    set link disable chap
+    set link accept chap
+    set link keep-alive 30 10
+
+    set ipcp no vjcomp
+    set ipcp ranges 0.0.0.0/0 0.0.0.0/0
+
+    set iface route default
+    set iface disable on-demand
+    set iface enable proxy-arp
+    set iface idle 0
+
+    open
+----
+The username used to authenticate with your
+	  [acronym]``
+ISP``
+.
+The password used to authenticate with your
+	  [acronym]``ISP``
+.
+
+
+Information about the link, or links, to establish is found in [path]``mpd.links``
+.
+An example [path]``mpd.links``
+ to accompany the above example is given beneath:
+
+[source]
+----
+adsl:
+    set link type pptp
+    set pptp mode active
+    set pptp enable originate outcall
+    set pptp self 10.0.0.1 
+    set pptp peer 10.0.0.138
+----
+The [acronym]``
+IP``
+ address of FreeBSD computer
+	  running [app]``mpd``
+.
+The [acronym]``IP``
+ address of the ADSL modem.
+	  The Alcatel SpeedTouch(TM)
+ Home defaults to [ipaddress]``10.0.0.138``
+.
+
+
+It is possible to initialize the connection easily by issuing the following command as [username]``root``
+:
+
+----
+# mpd -b adsl
+----
+
+
+To view the status of the connection:
+
+----
+% ifconfig ng0ng0: flags=88d1<UP,POINTOPOINT,RUNNING,NOARP,SIMPLEX,MULTICAST> mtu 1500
+     inet 216.136.204.117 --> 204.152.186.171 netmask 0xffffffff
+----
+
+
+Using [app]``mpd`` is the recommended way to connect to an ADSL service with FreeBSD.
+
+=== Using pptpclient
+
+
+It is also possible to use FreeBSD to connect to other PPPoA services using [package]#net/pptpclient#
+.
+
+To use [package]#net/pptpclient#
+ to connect to a DSL service, install the port or package, then edit [path]``/etc/ppp/ppp.conf``
+.
+An example section of [path]``ppp.conf``
+ is given below.
+For further information on [path]``ppp.conf``
+ options consult  {{< manpage "ppp" "8" >}}
+.
+
+[source]
+----
+adsl:
+ set log phase chat lcp ipcp ccp tun command
+ set timeout 0
+ enable dns
+ set authname username 
+ set authkey password 
+ set ifaddr 0 0
+ add default HISADDR
+----
+The username for the DSL provider.
+The password for your account.
+
+[WARNING]
+====
+Since the account's password is added to [path]``ppp.conf``
+in plain text form, make sure nobody can read the contents of this file:
+
+----
+# chown root:wheel /etc/ppp/ppp.conf
+# chmod 600 /etc/ppp/ppp.conf
+----
+====
+
+
+This will open a tunnel for a [acronym]``PPP``	session to the DSL router.
+Ethernet DSL modems have a preconfigured LAN [acronym]``IP`` address to connect to.
+In the case of the Alcatel SpeedTouch(TM)
+ Home, this address is [ipaddress]``10.0.0.138``
+.
+The router's documentation should list the address the device uses.
+To open the tunnel and start a [acronym]``PPP``	session:
+
+----
+# pptp address adsl
+----
+
+[TIP]
+====
+If an ampersand ("`&`"
+) is added to the end of this command, [app]``pptp`` will return the prompt.
+====
+
+
+A [path]``tun``
+ virtual tunnel device will be created for interaction between the [app]``pptp`` and [app]``ppp`` processes.
+Once the prompt is returned, or the [app]``pptp`` process has confirmed a connection, examine the tunnel:
+
+----
+% ifconfig tun0tun0: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1500
+        inet 216.136.204.21 --> 204.152.186.171 netmask 0xffffff00
+	Opened by PID 918
+----
+
+
+If the connection fails, check the configuration of the router, which is usually accessible using a web browser.
+Also, examine the output of [command]``pptp`` and the contents of the log file, [path]``/var/log/ppp.log``
+ for clues.
+
+ifdef::backend-docbook[]
+[index]
+== Index
+// Generated automatically by the DocBook toolchain.
+endif::backend-docbook[]

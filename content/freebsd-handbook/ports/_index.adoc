@@ -1,0 +1,1347 @@
+---
+title: "Installing Applications: Packages and Ports"
+---
+[[_ports]]
+= Installing Applications: Packages and Ports
+:doctype: book
+:sectnums:
+:toc: left
+:icons: font
+:experimental:
+:sourcedir: .
+:imagesdir: ./images
+
+[[_ports_synopsis]]
+== Synopsis
+
+(((ports)))
+
+(((packages)))
+
+
+FreeBSD is bundled with a rich collection of system tools as part of the base system.
+In addition,  FreeBSD provides two complementary technologies for installing third-party software: the FreeBSD Ports Collection, for installing from source, and packages, for installing from pre-built binaries.
+Either method may be used to install software from local media or from the network.
+
+After reading this chapter, you will know:
+
+* The difference between binary packages and ports.
+* How to find third-party software that has been ported to FreeBSD.
+* How to manage binary packages using [app]``pkg``.
+* How to build third-party software from source using the Ports Collection.
+* How to find the files installed with the application for post-installation configuration.
+* What to do if a software installation fails.
+
+
+[[_ports_overview]]
+== Overview of Software Installation
+
+
+The typical steps for installing third-party software on a UNIX(R) system include:
+
+
+. Find and download the software, which might be distributed in source code format or as a binary.
+. Unpack the software from its distribution format. This is typically a tarball compressed with a program such as  {{< manpage "compress" "1" >}} ,  {{< manpage "gzip" "1" >}} ,  {{< manpage "bzip2" "1" >}} or  {{< manpage "xz" "1" >}} .
+. Locate the documentation in [path]``INSTALL`` , [path]``README`` or some file in a [path]``doc/`` subdirectory and read up on how to install the software.
+. If the software was distributed in source format, compile it. This may involve editing a [path]``Makefile`` or running a [command]``configure`` script.
+. Test and install the software.
+
+
+A FreeBSD _port_ is a collection of files designed to automate the process of compiling an application from source code.
+The files that comprise a port contain all the necessary information to automatically download, extract, patch, compile, and install the application.
+
+If the software has not already been adapted and tested on FreeBSD, the source code might need editing in order for it to install and run properly.
+
+However, over link:@@URL_RELPREFIX@@/ports/index.html[24,000] third-party applications have already been ported to FreeBSD.
+When feasible, these applications are made available for download as pre-compiled __packages__.
+
+Packages can be manipulated with the FreeBSD package management commands.
+
+Both packages and ports understand dependencies.
+If a package or port is used to install an application and a dependent library is not already installed, the library will automatically be installed first.
+
+A FreeBSD package contains pre-compiled copies of all the commands for an application, as well as any configuration files and documentation.
+A package can be manipulated with the  {{< manpage "pkg" "8" >}}
+ commands, such as [command]``pkg install``.
+
+While the two technologies are similar, packages and ports each have their own strengths.
+Select the technology that meets your requirements for installing a particular application.
+
+.Package Benefits
+* A compressed package tarball is typically smaller than the compressed tarball containing the source code for the application.
+* Packages do not require compilation time. For large applications, such as [app]``Mozilla``, [app]``KDE``, or [app]``GNOME``, this can be important on a slow system.
+* Packages do not require any understanding of the process involved in compiling software on FreeBSD.
+
+
+.Port Benefits
+* Packages are normally compiled with conservative options because they have to run on the maximum number of systems. By compiling from the port, one can change the compilation options.
+* Some applications have compile-time options relating to which features are installed. For example, [app]``Apache`` can be configured with a wide variety of different built-in options.
++ 
+In some cases, multiple packages will exist for the same application to specify certain settings.
+For example, [app]``Ghostscript`` is available as a [path]``ghostscript``
+package and a [path]``ghostscript-nox11``
+package, depending on whether or not [app]``Xorg`` is installed.
+Creating multiple packages rapidly becomes impossible if an application has more than one or two different compile-time options.
+* The licensing conditions of some software forbid binary distribution. Such software must be distributed as source code which must be compiled by the end-user.
+* Some people do not trust binary distributions or prefer to read through source code in order to look for potential problems.
+* Source code is needed in order to apply custom patches.
+
+
+To keep track of updated ports, subscribe to the link:FreeBSD ports mailing list and the link:FreeBSD ports bugs mailing list.
+
+[WARNING]
+====
+Before installing any application, check https://vuxml.freebsd.org/	for security issues related to the application or type [command]``pkg audit -F`` to check all installed applications for known vulnerabilities.
+====
+
+
+The remainder of this chapter explains how to use packages and ports to install and manage third-party software on FreeBSD.
+
+[[_ports_finding_applications]]
+== Finding Software
+
+
+FreeBSD's list of available applications is growing all the time.
+There are a number of ways to find software to install:
+
+* The FreeBSD web site maintains an up-to-date searchable list of all the available applications, at link:@@URL_RELPREFIX@@/ports/index.html[https://www.FreeBSD.org/ports/]. The ports can be searched by application name or by software category.
+* {empty}
++
+
+(((FreshPorts)))
++
+Dan Langille maintains http://www.FreshPorts.org/[FreshPorts.org]	  which provides a comprehensive search utility and also tracks changes to the applications in the Ports Collection.
+Registered users can create a customized watch list in order to receive an automated email when their watched ports are updated.
+* {empty}
++
+
+(((SourceForge)))
++
+If finding a particular application becomes challenging, try searching a site like http://www.sourceforge.net/[SourceForge.net]	  or http://www.github.com/[GitHub.com] then check back at the link:@@URL_RELPREFIX@@/ports/index.html[FreeBSD site]	  to see if the application has been ported.
+* {empty}
++
+
+(((pkg,search)))
++
+To search the binary package repository for an application:
++
+
+----
+# pkg search subversiongit-subversion-`1.9.2`java-subversion-`1.8.8_2`p5-subversion-`1.8.8_2`py27-hgsubversion-`1.6`py27-subversion-`1.8.8_2`ruby-subversion-`1.8.8_2`subversion-`1.8.8_2`subversion-book-`4515`subversion-static-`1.8.8_2`subversion16-`1.6.23_4`subversion17-`1.7.16_2`
+----
++
+Package names include the version number and, in the case of ports based on python, the version number of the version of python the package was built with.
+Some ports also have multiple versions available.
+In the case of [app]``Subversion``, there are different versions available, as well as different compile options.
+In this case, the statically linked version of [app]``Subversion``.
+When indicating which package to install, it is best to specify the application by the port origin, which is the path in the ports tree.
+Repeat the [command]``pkg search`` with [option]``-o`` to list the origin of each package:
++
+
+----
+# pkg search -o subversiondevel/git-subversion
+java/java-subversion
+devel/p5-subversion
+devel/py-hgsubversion
+devel/py-subversion
+devel/ruby-subversion
+devel/subversion16
+devel/subversion17
+devel/subversion
+devel/subversion-book
+devel/subversion-static
+----
++
+Searching by shell globs, regular expressions, exact match, by description, or any other field in the repository database is also supported by [command]``pkg search``.
+After installing [package]#ports-mgmt/pkg#
+or [package]#ports-mgmt/pkg-devel#
+, see  {{< manpage "pkg-search" "8" >}}
+for more details.
+* If the Ports Collection is already installed, there are several methods to query the local version of the ports tree. To find out which category a port is in, type [command]``whereis [replaceable]``file````, where [replaceable]``file`` is the program to be installed:
++
+
+----
+# whereis lsoflsof: /usr/ports/sysutils/lsof
+----
++
+Alternately, an  {{< manpage "echo" "1" >}}
+statement can be used:
++
+
+----
+# echo /usr/ports/*/*lsof*/usr/ports/sysutils/lsof
+----
++
+Note that this will also return any matched files downloaded into the [path]``/usr/ports/distfiles``
+directory.
+* Another way to find software is by using the Ports Collection's built-in search mechanism. To use the search feature, [app]``cd`` to [path]``/usr/ports`` then run [command]``make search name=program-name`` where [replaceable]``program-name`` is the name of the software. For example, to search for [command]``lsof``:
++
+
+----
+# cd /usr/ports
+# make search name=lsofPort:   lsof-4.88.d,8
+Path:   /usr/ports/sysutils/lsof
+Info:   Lists information about open files (similar to fstat(1))
+Maint:  ler@lerctr.org
+Index:  sysutils
+B-deps:
+R-deps:
+----
++
+TIP: The built-in search mechanism uses a file of index information.
+If a message indicates that the [path]``INDEX``
+ is required, run [command]``make fetchindex`` to download the current index file.
+With the [path]``INDEX``
+ present, [command]``make search`` will be able to perform the requested search.
++
+
+
++
+The "`Path:`"
+line indicates where to find the port.
++ 
+To receive less information, use the [command]``quicksearch`` feature:
++
+
+----
+# cd /usr/ports
+# make quicksearch name=lsofPort:   lsof-4.88.d,8
+Path:   /usr/ports/sysutils/lsof
+Info:   Lists information about open files (similar to fstat(1))
+----
++
+For more in-depth searching, use [command]``make search
+key=[replaceable]``string```` or [command]``make quicksearch
+key=[replaceable]``string````, where [replaceable]``string`` is some text to search for.
+The text can be in comments, descriptions, or dependencies in order to find ports which relate to a particular subject when the name of the program is unknown.
++ 
+When using `search` or ``quicksearch``, the search string is case-insensitive.
+Searching for "`LSOF`"
+will yield the same results as searching for "`lsof`"
+.
+
+
+[[_pkgng_intro]]
+== Using pkg for Binary Package Management
+
+[app]``
+pkg`` is the next generation replacement for the traditional FreeBSD package management tools, offering many features that make dealing with binary packages faster and easier.
+
+For sites wishing to only use prebuilt binary packages from the FreeBSD mirrors, managing packages with [app]``pkg`` can be sufficient.
+
+However, for those sites building from source or using their own repositories, a separate <<_ports_upgrading_tools,port management tool>> will be needed.
+
+Since [app]``pkg`` only works with binary packages, it is not a replacement for such tools.
+Those tools can be used to install software from both binary packages and the Ports Collection, while [app]``pkg`` installs only binary packages.
+
+[[_pkgng_initial_setup]]
+=== Getting Started with pkg
+
+
+FreeBSD includes a bootstrap utility which can be used to download and install [app]``pkg``	and its manual pages.
+This utility is designed to work with versions of FreeBSD starting with 10.[replaceable]``X``.
+
+[NOTE]
+====
+Not all FreeBSD versions and architectures support this bootstrap process.
+The current list is at https://pkg.freebsd.org/.
+For other cases, [app]``pkg`` must instead be installed from the Ports Collection or as a binary package.
+====
+
+
+To bootstrap the system, run:
+
+----
+# /usr/sbin/pkg
+----
+
+
+You must have a working Internet connection for the bootstrap process to succeed.
+
+Otherwise, to install the port, run:
+
+----
+# cd /usr/ports/ports-mgmt/pkg
+# make
+# make install clean
+----
+
+
+When upgrading an existing system that originally used the older pkg_* tools, the database must be converted to the new format, so that the new tools are aware of the already installed packages.
+Once [app]``pkg`` has been installed, the package database must be converted from the traditional format to the new format by running this command:
+
+----
+# pkg2ng
+----
+
+[NOTE]
+====
+
+This step is not required for new installations that do not yet have any third-party software installed.
+====
+
+[IMPORTANT]
+====
+This step is not reversible.
+Once the package database has been converted to the [app]``pkg``	  format, the traditional `pkg_*` tools should no longer be used.
+====
+
+[NOTE]
+====
+The package database conversion may emit errors as the contents are converted to the new version.
+Generally, these errors can be safely ignored.
+However, a list of software that was not successfully converted is shown after [command]``pkg2ng`` finishes.
+These applications must be manually reinstalled.
+====
+
+
+To ensure that the Ports Collection registers new software with [app]``pkg`` instead of the traditional packages database, FreeBSD versions earlier than 10.[replaceable]``X`` require this line in [path]``/etc/make.conf``
+:
+
+[source]
+----
+WITH_PKGNG=	yes
+----
+
+
+By default, [app]``pkg`` uses the binary packages from the FreeBSD package mirrors (the __repository__). For information about building a custom package repository, see <<_ports_poudriere>>.
+
+Additional [app]``pkg`` configuration options are described in  {{< manpage "pkg.conf" "5" >}}
+.
+
+Usage information for [app]``pkg`` is available in the  {{< manpage "pkg" "8" >}}
+ manual page or by running [command]``pkg`` without additional arguments.
+
+Each [app]``pkg`` command argument is documented in a command-specific manual page.
+To read the manual page for [command]``pkg install``, for example, run either of these commands:
+
+----
+# pkg help install
+----
+
+----
+# man pkg-install
+----
+
+
+The rest of this section demonstrates common binary package management tasks which can be performed using [app]``pkg``.
+Each demonstrated command provides many switches to customize its use.
+Refer to a command's help or man page for details and more examples.
+
+[[_pkgng_pkg_info]]
+=== Obtaining Information About Installed Packages
+
+
+Information about the packages installed on a system can be viewed by running [command]``pkg info`` which, when run without any switches, will list the package version for either all installed packages or the specified package.
+
+For example, to see which version of [app]``pkg`` is installed, run:
+
+----
+# pkg info pkgpkg-1.1.4_1
+----
+
+[[_pkgng_installing_deinstalling]]
+=== Installing and Removing Packages
+
+
+To install a binary package use the following command, where [replaceable]``packagename`` is the name of the package to install:
+
+----
+# pkg install packagename
+----
+
+
+This command uses repository data to determine which version of the software to install and if it has any uninstalled dependencies.
+For example, to install [app]``curl``:
+
+----
+# pkg install curlUpdating repository catalogue
+/usr/local/tmp/All/curl-7.31.0_1.txz          100% of 1181 kB 1380 kBps 00m01s
+
+/usr/local/tmp/All/ca_root_nss-3.15.1_1.txz   100% of  288 kB 1700 kBps 00m00s
+
+Updating repository catalogue
+The following 2 packages will be installed:
+
+        Installing ca_root_nss: 3.15.1_1
+        Installing curl: 7.31.0_1
+
+The installation will require 3 MB more space
+
+0 B to be downloaded
+
+Proceed with installing packages [y/N]:yChecking integrity... done
+[1/2] Installing ca_root_nss-3.15.1_1... done
+[2/2] Installing curl-7.31.0_1... done
+Cleaning up cache files...Done
+----
+
+
+The new package and any additional packages that were installed as dependencies can be seen in the installed packages list:
+
+----
+# pkg infoca_root_nss-3.15.1_1	The root certificate bundle from the Mozilla Project
+curl-7.31.0_1	Non-interactive tool to get files from FTP, GOPHER, HTTP(S) servers
+pkg-1.1.4_6	New generation package manager
+----
+
+
+Packages that are no longer needed can be removed with [command]``pkg delete``.
+For example:
+
+----
+# pkg delete curlThe following packages will be deleted:
+
+	curl-7.31.0_1
+
+The deletion will free 3 MB
+
+Proceed with deleting packages [y/N]:y[1/1] Deleting curl-7.31.0_1... done
+----
+
+[[_pkgng_upgrading]]
+=== Upgrading Installed Packages
+
+
+Installed packages can be upgraded to their latest versions by running:
+
+----
+# pkg upgrade
+----
+
+
+This command will compare the installed versions with those available in the repository catalogue and upgrade them from the repository.
+
+[[_pkgng_auditing]]
+=== Auditing Installed Packages
+
+
+Software vulnerabilities are regularly discovered in third-party applications.
+To address this, [app]``pkg`` includes a built-in auditing mechanism.
+To determine if there are any known vulnerabilities for the software installed on the system, run:
+
+----
+# pkg audit -F
+----
+
+[[_pkgng_autoremove]]
+=== Automatically Removing Unused Packages
+
+
+Removing a package may leave behind dependencies which are no longer required.
+Unneeded packages that were installed as dependencies (leaf packages) can be automatically detected and removed using:
+
+----
+# pkg autoremovePackages to be autoremoved:
+	ca_root_nss-3.15.1_1
+
+The autoremoval will free 723 kB
+
+Proceed with autoremoval of packages [y/N]:yDeinstalling ca_root_nss-3.15.1_1... done
+----
+
+
+Packages installed as dependencies are called _automatic_ packages.
+Non-automatic packages, i.e the packages that were explicity installed not as a dependency to another package, can be listed using:
+
+----
+# pkg prime-listnginx
+openvpn
+sudo
+----
+
+[command]``
+pkg prime-list`` is an alias command declared in [path]``/usr/local/etc/pkg.conf``
+.
+There are many others that can be used to query the package database of the system.
+For instance, command [command]``pkg prime-origins`` can be used to get the origin port directory of the list mentioned above:
+
+----
+# pkg prime-originswww/nginx
+security/openvpn
+security/sudo
+----
+
+
+This list can be used to rebuild all packages installed on a system using build tools such as [package]#
+	ports-mgmt/poudriere#
+ or [package]#
+	ports-mgmt/synth#
+.
+
+Marking an installed package as automatic can be done using:
+
+----
+# pkg set -A 1 devel/cmake
+----
+
+
+Once a package is a leaf package and is marked as automatic, it gets selected by [command]``pkg autoremove``.
+
+Marking an installed package as _not_	automatic can be done using:
+
+----
+# pkg set -A 0 devel/cmake
+----
+
+[[_pkgng_backup]]
+=== Restoring the Package Database
+
+
+Unlike the traditional package management system, [app]``pkg`` includes its own package database backup mechanism.
+This functionality is enabled by default.
+
+[TIP]
+====
+To disable the periodic script from backing up the package database, set `daily_backup_pkgdb_enable="NO"` in  {{< manpage "periodic.conf" "5" >}}
+.
+====
+
+
+To restore the contents of a previous package database backup, run the following command replacing [replaceable]``/path/to/pkg.sql`` with the location of the backup:
+
+----
+# pkg backup -r /path/to/pkg.sql
+----
+
+[NOTE]
+====
+If restoring a backup taken by the periodic script, it must be decompressed prior to being restored.
+====
+
+
+To run a manual backup of the [app]``pkg`` database, run the following command, replacing [replaceable]``/path/to/pkg.sql``	with a suitable file name and location:
+
+----
+# pkg backup -d /path/to/pkg.sql
+----
+
+[[_pkgng_clean]]
+=== Removing Stale Packages
+
+
+By default, [app]``pkg`` stores binary packages in a cache directory defined by [var]``PKG_CACHEDIR`` in  {{< manpage "pkg.conf" "5" >}}
+.
+Only copies of the latest installed packages are kept.
+Older versions of [app]``pkg`` kept all previous packages.
+To remove these outdated binary packages, run:
+
+----
+# pkg clean
+----
+
+
+The entire cache may be cleared by running:
+
+----
+# pkg clean -a
+----
+
+[[_pkgng_set]]
+=== Modifying Package Metadata
+
+
+Software within the FreeBSD{nbsp}Ports Collection can undergo major version number changes.
+To address this, [app]``pkg`` has a built-in command to update package origins.
+This can be useful, for example, if [package]#lang/php5#
+ is renamed to [package]#lang/php53#
+ so that [package]#lang/php5#
+ can now represent version ``5.4``.
+
+To change the package origin for the above example, run:
+
+----
+# pkg set -o lang/php5:lang/php53
+----
+
+
+As another example, to update [package]#lang/ruby18#
+ to [package]#lang/ruby19#
+, run:
+
+----
+# pkg set -o lang/ruby18:lang/ruby19
+----
+
+
+As a final example, to change the origin of the [path]``libglut``
+ shared libraries from [package]#graphics/libglut#
+ to [package]#graphics/freeglut#
+, run:
+
+----
+# pkg set -o graphics/libglut:graphics/freeglut
+----
+
+[NOTE]
+====
+When changing package origins, it is important to reinstall packages that are dependent on the package with the modified origin.
+To force a reinstallation of dependent packages, run:
+
+----
+# pkg install -Rf graphics/freeglut
+----
+====
+
+[[_ports_using]]
+== Using the Ports Collection
+
+
+The Ports Collection is a set of [path]``Makefiles``
+, patches, and description files.
+Each set of these files is used to compile and install an individual application on FreeBSD, and is called a __port__.
+
+By default, the Ports Collection itself is stored as a subdirectory of [path]``/usr/ports``
+.
+
+Before an application can be compiled using a port, the Ports Collection must first be installed.
+If it was not installed during the installation of FreeBSD, use one of the following methods to install it:
+[[_ports_using_portsnap_method]]
+.Procedure: Portsnap Method
+
+The base system of FreeBSD includes [app]``Portsnap``.
+This is a fast and user-friendly tool for retrieving the Ports Collection and is the recommended choice for most users.
+This utility connects to a FreeBSD site, verifies the secure key, and downloads a new copy of the Ports Collection.
+The key is used to verify the integrity of all downloaded files.
+. To download a compressed snapshot of the Ports Collection into [path]``/var/db/portsnap`` :
++
+
+----
+# portsnap fetch
+----
+. When running [app]``Portsnap`` for the first time, extract the snapshot into [path]``/usr/ports`` :
++
+
+----
+# portsnap extract
+----
+. After the first use of [app]``Portsnap`` has been completed as shown above, [path]``/usr/ports`` can be updated as needed by running:
++
+
+----
+# portsnap fetch
+# portsnap update
+----
++
+When using ``fetch``, the `extract` or the `update`	  operation may be run consecutively, like so:
++
+
+----
+# portsnap fetch update
+----
+
+
+[[_ports_using_subversion_method]]
+.Procedure: Subversion Method
+
+If more control over the ports tree is needed or if local changes need to be maintained, [app]``Subversion`` can be used to obtain the Ports Collection.
+Refer to link:/doc/en_US.ISO8859-1/en_US.ISO8859-1/articles/committers-guide/subversion-primer.html[the
+	  Subversion Primer] for a detailed description of [app]``Subversion``.
+. [app]``Subversion`` must be installed before it can be used to check out the ports tree. If a copy of the ports tree is already present, install [app]``Subversion`` like this:
++
+
+----
+# cd /usr/ports/devel/subversion
+# make install clean
+----
++
+If the ports tree is not available, or [app]``pkg`` is being used to manage packages, [app]``Subversion`` can be installed as a package:
++
+
+----
+# pkg install subversion
+----
+. Check out a copy of the ports tree:
++
+
+----
+# svn checkout https://svn.FreeBSD.org/ports/head /usr/ports
+----
+. As needed, update [path]``/usr/ports`` after the initial [app]``Subversion``	  checkout:
++
+
+----
+# svn update /usr/ports
+----
+
+
+The Ports Collection contains directories for software categories.
+Inside each category are subdirectories for individual applications.
+Each application subdirectory contains a set of files that tells FreeBSD how to compile and install that program, called a __ports skeleton__.
+Each port skeleton includes these files and directories:
+
+* [path]``Makefile`` : contains statements that specify how the application should be compiled and where its components should be installed.
+* [path]``distinfo`` : contains the names and checksums of the files that must be downloaded to build the port.
+* [path]``files/`` : this directory contains any patches needed for the program to compile and install on FreeBSD. This directory may also contain other files used to build the port.
+* [path]``pkg-descr`` : provides a more detailed description of the program.
+* [path]``pkg-plist`` :  a list of all the files that will be installed by the port. It also tells the ports system which files to remove upon deinstallation.
+
+
+Some ports include [path]``pkg-message``
+ or other files to handle special situations.
+For more details on these files, and on ports in general, refer to the link:/doc/en_US.ISO8859-1/en_US.ISO8859-1/books/porters-handbook/index.html[FreeBSD
+	Porter's Handbook].
+
+The port does not include the actual source code, also known as a [path]``distfile``
+.
+The extract portion of building a port will automatically save the downloaded source to [path]``/usr/ports/distfiles``
+.
+
+[[_ports_skeleton]]
+=== Installing Ports
+
+
+This section provides basic instructions on using the Ports Collection to install or remove software.
+The detailed description of available [command]``make`` targets and environment variables is available in  {{< manpage "ports" "7" >}}
+.
+
+[WARNING]
+====
+Before compiling any port, be sure to update the Ports Collection as described in the previous section.
+Since the installation of any third-party software can introduce security vulnerabilities, it is recommended to first check https://vuxml.freebsd.org/	  for known security issues related to the port.
+Alternately, run [command]``pkg audit -F`` before installing a new port.
+This command can be configured to automatically perform a security audit and an update of the vulnerability database during the daily security system check.
+For more information, refer to  {{< manpage "pkg-audit" "8" >}}
+ and  {{< manpage "periodic" "8" >}}
+.
+====
+
+
+Using the Ports Collection assumes a working Internet connection.
+It also requires superuser privilege.
+
+To compile and install the port, change to the directory of the port to be installed, then type [command]``make
+	  install`` at the prompt.
+Messages will indicate the progress:
+
+----
+# cd /usr/ports/sysutils/lsof
+# make install>> lsof_4.88D.freebsd.tar.gz doesn't seem to exist in /usr/ports/distfiles/.
+>> Attempting to fetch from ftp://lsof.itap.purdue.edu/pub/tools/unix/lsof/.
+===>  Extracting for lsof-4.88
+...
+[extraction output snipped]
+...
+>> Checksum OK for lsof_4.88D.freebsd.tar.gz.
+===>  Patching for lsof-4.88.d,8
+===>  Applying FreeBSD patches for lsof-4.88.d,8
+===>  Configuring for lsof-4.88.d,8
+...
+[configure output snipped]
+...
+===>  Building for lsof-4.88.d,8
+...
+[compilation output snipped]
+...
+
+===>  Installing for lsof-4.88.d,8
+...
+[installation output snipped]
+...
+===>   Generating temporary packing list
+===>   Compressing manual pages for lsof-4.88.d,8
+===>   Registering installation for lsof-4.88.d,8
+===>  SECURITY NOTE:
+      This port has installed the following binaries which execute with
+      increased privileges.
+/usr/local/sbin/lsof
+# 
+----
+
+
+Since [command]``lsof`` is a program that runs with increased privileges, a security warning is displayed as it is installed.
+Once the installation is complete, the prompt will be returned.
+
+Some shells keep a cache of the commands that are available in the directories listed in the [var]``PATH`` environment variable, to speed up lookup operations for the executable file of these commands.
+Users of the [command]``tcsh`` shell should type [command]``rehash`` so that a newly installed command can be used without specifying its full path.
+Use [command]``hash -r`` instead for the [command]``sh`` shell.
+Refer to the documentation for the shell for more information.
+
+During installation, a working subdirectory is created which contains all the temporary files used during compilation.
+Removing this directory saves disk space and minimizes the chance of problems later when upgrading to the newer version of the port:
+
+----
+# make clean===>  Cleaning for lsof-88.d,8
+# 
+----
+
+[NOTE]
+====
+To save this extra step, instead use [command]``make
+	    install clean`` when compiling the port.
+====
+
+==== Customizing Ports Installation
+
+
+Some ports provide build options which can be used to enable or disable application components, provide security options, or allow for other customizations.
+Examples include [package]#www/firefox#
+, [package]#security/gpgme#
+, and [package]#mail/sylpheed-claws#
+.
+If the port depends upon other ports which have configurable options, it may pause several times for user interaction as the default behavior is to prompt the user to select options from a menu.
+To avoid this and do all of the configuration in one batch, run [command]``make config-recursive`` within the port skeleton.
+Then, run [command]``make install
+	    [clean]`` to compile and install the port.
+
+[TIP]
+====
+When using ``config-recursive``, the list of ports to configure are gathered by the `all-depends-list` target.
+It is recommended to run [command]``make
+	      config-recursive`` until all dependent ports options have been defined, and ports options screens no longer appear, to be certain that all dependency options have been configured.
+====
+
+
+There are several ways to revisit a port's build options menu in order to add, remove, or change these options after a port has been built.
+One method is to [command]``cd`` into the directory containing the port and type [command]``make config``.
+Another option is to use [command]``make showconfig``.
+Another option is to execute [command]``make
+	    rmconfig`` which will remove all selected options and allow you to start over.
+All of these options, and others, are explained in great detail in  {{< manpage "ports" "7" >}}
+.
+
+The ports system uses  {{< manpage "fetch" "1" >}}
+ to download the source files, which supports various environment variables.
+The [var]``FTP_PASSIVE_MODE``, [var]``FTP_PROXY``, and [var]``FTP_PASSWORD``	  variables may need to be set if the FreeBSD system is behind a firewall or FTP/HTTP proxy.
+See  {{< manpage "fetch" "3" >}}
+ for the complete list of supported variables.
+
+For users who cannot be connected to the Internet all the time, [command]``make fetch`` can be run within [path]``/usr/ports``
+, to fetch all distfiles, or within a category, such as [path]``/usr/ports/net``
+, or within the specific port skeleton.
+Note that if a port has any dependencies, running this command in a category or ports skeleton will _not_ fetch the distfiles of ports from another category.
+Instead, use [command]``make
+	    fetch-recursive`` to also fetch the distfiles for all the dependencies of a port.
+
+In rare cases, such as when an organization has a local distfiles repository, the [var]``MASTER_SITES``	  variable can be used to override the download locations specified in the [path]``Makefile``
+.
+When using, specify the alternate location:
+
+----
+# cd /usr/ports/directory
+# make MASTER_SITE_OVERRIDE= \
+ftp://ftp.organization.org/pub/FreeBSD/ports/distfiles/ fetch
+----
+
+
+The [var]``WRKDIRPREFIX`` and [var]``PREFIX`` variables can override the default working and target directories.
+For example:
+
+----
+# make WRKDIRPREFIX=/usr/home/example/ports install
+----
+
+
+will compile the port in [path]``/usr/home/example/ports``
+ and install everything under [path]``/usr/local``
+.
+
+----
+# make PREFIX=/usr/home/example/local install
+----
+
+
+will compile the port in [path]``/usr/ports``
+	  and install it in [path]``/usr/home/example/local``
+.
+And:
+
+----
+# make WRKDIRPREFIX=../ports PREFIX=../local install
+----
+
+
+will combine the two.
+
+These can also be set as environmental variables.
+Refer to the manual page for your shell for instructions on how to set an environmental variable.
+
+[[_ports_removing]]
+=== Removing Installed Ports
+
+(((ports,removing)))
+
+
+Installed ports can be uninstalled using [command]``pkg
+	  delete``.
+Examples for using this command can be found in the  {{< manpage "pkg-delete" "8" >}}
+ manual page.
+
+Alternately, [command]``make deinstall`` can be run in the port's directory:
+
+----
+# cd /usr/ports/sysutils/lsofmake deinstall===>  Deinstalling for sysutils/lsof
+===>   Deinstalling
+Deinstallation has been requested for the following 1 packages:
+
+	lsof-4.88.d,8
+
+The deinstallation will free 229 kB
+[1/1] Deleting lsof-4.88.d,8... done
+----
+
+
+It is recommended to read the messages as the port is uninstalled.
+If the port has any applications that depend upon it, this information will be displayed but the uninstallation will proceed.
+In such cases, it may be better to reinstall the application in order to prevent broken dependencies.
+
+[[_ports_upgrading]]
+=== Upgrading Ports
+
+
+Over time, newer versions of software become available in the Ports Collection.
+This section describes how to determine which software can be upgraded and how to perform the upgrade.
+
+To determine if newer versions of installed ports are available, ensure that the latest version of the ports tree is installed, using the updating command described in either <<_ports_using_portsnap_method>> or <<_ports_using_subversion_method>>.
+On FreeBSD 10 and later, or if the system has been converted to [app]``pkg``, the following command will list the installed ports which are out of date:
+
+----
+# pkg version -l "<"
+----
+
+
+For FreeBSD 9.[replaceable]``X`` and lower, the following command will list the installed ports that are out of date:
+
+----
+# pkg_version -l "<"
+----
+
+[IMPORTANT]
+====
+Before attempting an upgrade, read [path]``/usr/ports/UPDATING``
+ from the top of the file to the date closest to the last time ports were upgraded or the system was installed.
+This file describes various issues and additional steps users may encounter and need to perform when updating a port, including such things as file format changes, changes in locations of configuration files, or any incompatibilities with previous versions.
+Make note of any instructions which match any of the ports that need upgrading and follow these instructions when performing the upgrade.
+====
+
+[[_ports_upgrading_tools]]
+==== Tools to Upgrade and Manage Ports
+
+(((ports,upgrading-tools)))
+
+
+The Ports Collection contains several utilities to perform the actual upgrade.
+Each has its strengths and weaknesses.
+
+Historically, most installations used either [app]``Portmaster`` or [app]``Portupgrade``. [app]``Synth`` is a newer alternative.
+
+[NOTE]
+====
+The choice of which tool is best for a particular system is up to the system administrator.
+It is recommended practice to back up your data before using any of these tools.
+====
+
+[[_portmaster]]
+==== Upgrading Ports Using Portmaster
+
+[package]#ports-mgmt/portmaster#
+ is a very small utility for upgrading installed ports.
+It is designed to use the tools installed with the FreeBSD base system without depending on other ports or databases.
+To install this utility as a port:
+
+----
+# cd /usr/ports/ports-mgmt/portmaster
+# make install clean
+----
+
+[app]``
+Portmaster`` defines four categories of ports:
+
+* Root port: has no dependencies and is not a dependency of any other ports.
+* Trunk port: has no dependencies, but other ports depend upon it.
+* Branch port: has dependencies and other ports depend upon it.
+* Leaf port: has dependencies but no other ports depend upon it.
+
+
+To list these categories and search for updates:
+
+----
+# portmaster -L===>>> Root ports (No dependencies, not depended on)
+===>>> ispell-3.2.06_18
+===>>> screen-4.0.3
+        ===>>> New version available: screen-4.0.3_1
+===>>> tcpflow-0.21_1
+===>>> 7 root ports
+...
+===>>> Branch ports (Have dependencies, are depended on)
+===>>> apache22-2.2.3
+        ===>>> New version available: apache22-2.2.8
+...
+===>>> Leaf ports (Have dependencies, not depended on)
+===>>> automake-1.9.6_2
+===>>> bash-3.1.17
+        ===>>> New version available: bash-3.2.33
+...
+===>>> 32 leaf ports
+
+===>>> 137 total installed ports
+        ===>>> 83 have new versions available
+----
+
+
+This command is used to upgrade all outdated ports:
+
+----
+# portmaster -a
+----
+
+[NOTE]
+====
+By default, [app]``Portmaster``	    makes a backup package before deleting the existing port.
+If the installation of the new version is successful, [app]``Portmaster`` deletes the backup.
+Using [option]``-b`` instructs [app]``Portmaster`` not to automatically delete the backup.
+Adding [option]``-i`` starts [app]``Portmaster`` in interactive mode, prompting for confirmation before upgrading each port.
+Many other options are available.
+Read through the manual page for  {{< manpage "portmaster" "8" >}}
+ for details regarding their usage.
+====
+
+
+If errors are encountered during the upgrade process, add [option]``-f`` to upgrade and rebuild all ports:
+
+----
+# portmaster -af
+----
+
+[app]``
+Portmaster`` can also be used to install new ports on the system, upgrading all dependencies before building and installing the new port.
+To use this function, specify the location of the port in the Ports Collection:
+
+----
+# portmaster shells/bash
+----
+
+
+More information about [package]#ports-mgmt/portmaster#
+ may be found in its [path]``pkg-descr``
+.
+
+[[_portupgrade]]
+==== Upgrading Ports Using Portupgrade
+
+(((portupgrade)))
+
+[package]#ports-mgmt/portupgrade#
+ is another utility that can be used to upgrade ports.
+It installs a suite of applications which can be used to manage ports.
+However, it is dependent upon Ruby.
+To install the port:
+
+----
+# cd /usr/ports/ports-mgmt/portupgrade
+# make install clean
+----
+
+
+Before performing an upgrade using this utility, it is recommended to scan the list of installed ports using [command]``pkgdb -F`` and to fix all the inconsistencies it reports.
+
+To upgrade all the outdated ports installed on the system, use [command]``portupgrade -a``.
+Alternately, include [option]``-i`` to be asked for confirmation of every individual upgrade:
+
+----
+# portupgrade -ai
+----
+
+
+To upgrade only a specified application instead of all available ports, use [command]``portupgrade
+	    [replaceable]``pkgname````.
+It is very important to include [option]``-R`` to first upgrade all the ports required by the given application:
+
+----
+# portupgrade -R firefox
+----
+
+
+If [option]``-P`` is included, [app]``Portupgrade`` searches for available packages in the local directories listed in [var]``PKG_PATH``.
+If none are available locally, it then fetches packages from a remote site.
+If packages can not be found locally or fetched remotely, [app]``Portupgrade`` will use ports.
+To avoid using ports entirely, specify [option]``-PP``.
+This last set of options tells [app]``Portupgrade`` to abort if no packages are available:
+
+----
+# portupgrade -PP gnome3
+----
+
+
+To just fetch the port distfiles, or packages, if [option]``-P`` is specified, without building or installing anything, use [option]``-F``.
+For further information on all of the available switches, refer to the manual page for [command]``portupgrade``.
+
+More information about [package]#ports-mgmt/portupgrade#
+ may be found in its [path]``pkg-descr``
+.
+
+[[_ports_disk_space]]
+=== Ports and Disk Space
+
+(((ports,disk-space)))
+
+
+Using the Ports Collection will use up disk space over time.
+After building and installing a port, running [command]``make clean`` within the ports skeleton will clean up the temporary [path]``work``
+ directory.
+If [app]``Portmaster`` is used to install a port, it will automatically remove this directory unless [option]``-K`` is specified.
+If [app]``Portupgrade`` is installed, this command will remove all [path]``work``
+ directories found within the local copy of the Ports Collection:
+
+----
+# portsclean -C
+----
+
+
+In addition, outdated source distribution files accumulate in [path]``/usr/ports/distfiles``
+ over time.
+To use [app]``Portupgrade`` to delete all the distfiles that are no longer referenced by any ports:
+
+----
+# portsclean -D
+----
+
+[app]``
+Portupgrade`` can remove all distfiles not referenced by any port currently installed on the system:
+
+----
+# portsclean -DD
+----
+
+
+If [app]``Portmaster`` is installed, use:
+
+----
+# portmaster --clean-distfiles
+----
+
+
+By default, this command is interactive and prompts the user to confirm if a distfile should be deleted.
+
+In addition to these commands, [package]#ports-mgmt/pkg_cutleaves#
+	automates the task of removing installed ports that are no longer needed.
+
+[[_ports_poudriere]]
+== Building Packages with Poudriere
+
+[app]``
+Poudriere`` is a [acronym]``BSD``-licensed utility for creating and testing FreeBSD packages.
+It uses FreeBSD jails to set up isolated compilation environments.
+These jails can be used to build packages for versions of FreeBSD that are different from the system on which it is installed, and also to build packages for i386 if the host is an amd64 system.
+Once the packages are built, they are in a layout identical to the official mirrors.
+These packages are usable by  {{< manpage "pkg" "8" >}}
+ and other package management tools.
+
+[app]``Poudriere`` is installed using the [package]#ports-mgmt/poudriere#
+ package or port.
+The installation includes a sample configuration file [path]``/usr/local/etc/poudriere.conf.sample``
+.
+Copy this file to [path]``/usr/local/etc/poudriere.conf``
+.
+Edit the copied file to suit the local configuration.
+
+While [acronym]``ZFS`` is not required on the system running [app]``poudriere``, it is beneficial.
+When [acronym]``ZFS`` is used, [var]``ZPOOL`` must be specified in [path]``/usr/local/etc/poudriere.conf``
+ and [var]``FREEBSD_HOST`` should be set to a nearby mirror.
+Defining [var]``CCACHE_DIR`` enables the use of [package]#devel/ccache#
+ to cache compilation and reduce build times for frequently-compiled code.
+It may be convenient to put [app]``poudriere`` datasets in an isolated tree mounted at [path]``/poudriere``
+.
+Defaults for the other configuration values are adequate.
+
+The number of processor cores detected is used to define how many builds will run in parallel.
+Supply enough virtual memory, either with [acronym]``RAM`` or swap space.
+If virtual memory runs out, the compilation jails will stop and be torn down, resulting in weird error messages.
+
+[[_poudriere_initialization]]
+=== Initialize Jails and Port Trees
+
+
+After configuration, initialize [app]``poudriere`` so that it installs a jail with the required FreeBSD tree and a ports tree.
+Specify a name for the jail using [option]``-j`` and the FreeBSD version with [option]``-v``.
+On systems running FreeBSD/amd64, the architecture can be set with [option]``-a`` to either `i386` or ``amd64``.
+The default is the architecture shown by [command]``uname``.
+
+----
+# poudriere jail -c -j 10amd64 -v 10.0-RELEASE====>> Creating 10amd64 fs... done
+====>> Fetching base.txz for FreeBSD 10.0-RELEASE amd64
+/poudriere/jails/10amd64/fromftp/base.txz      100% of   59 MB 1470 kBps 00m42s
+====>> Extracting base.txz... done
+====>> Fetching src.txz for FreeBSD 10.0-RELEASE amd64
+/poudriere/jails/10amd64/fromftp/src.txz       100% of  107 MB 1476 kBps 01m14s
+====>> Extracting src.txz... done
+====>> Fetching games.txz for FreeBSD 10.0-RELEASE amd64
+/poudriere/jails/10amd64/fromftp/games.txz     100% of  865 kB  734 kBps 00m01s
+====>> Extracting games.txz... done
+====>> Fetching lib32.txz for FreeBSD 10.0-RELEASE amd64
+/poudriere/jails/10amd64/fromftp/lib32.txz     100% of   14 MB 1316 kBps 00m12s
+====>> Extracting lib32.txz... done
+====>> Cleaning up... done
+====>> Jail 10amd64 10.0-RELEASE amd64 is ready to be used
+----
+
+----
+# poudriere ports -c -p local====>> Creating local fs... done
+====>> Extracting portstree "local"...
+Looking up portsnap.FreeBSD.org mirrors... 7 mirrors found.
+Fetching public key from ec2-eu-west-1.portsnap.freebsd.org... done.
+Fetching snapshot tag from ec2-eu-west-1.portsnap.freebsd.org... done.
+Fetching snapshot metadata... done.
+Fetching snapshot generated at Tue Feb 11 01:07:15 CET 2014:
+94a3431f0ce567f6452ffde4fd3d7d3c6e1da143efec76100% of   69 MB 1246 kBps 00m57s
+Extracting snapshot... done.
+Verifying snapshot integrity... done.
+Fetching snapshot tag from ec2-eu-west-1.portsnap.freebsd.org... done.
+Fetching snapshot metadata... done.
+Updating from Tue Feb 11 01:07:15 CET 2014 to Tue Feb 11 16:05:20 CET 2014.
+Fetching 4 metadata patches... done.
+Applying metadata patches... done.
+Fetching 0 metadata files... done.
+Fetching 48 patches.
+(48/48) 100.00%  done.
+done.
+Applying patches...
+done.
+Fetching 1 new ports or files... done.
+/poudriere/ports/tester/CHANGES
+/poudriere/ports/tester/COPYRIGHT
+
+[...]
+
+Building new INDEX files... done.
+----
+
+
+On a single computer, [app]``poudriere``	can build ports with multiple configurations, in multiple jails, and from different port trees.
+Custom configurations for these combinations are called __sets__.
+See the CUSTOMIZATION section of  {{< manpage "poudriere" "8" >}}
+ for details after [package]#ports-mgmt/poudriere#
+ or [package]#ports-mgmt/poudriere-devel#
+ is installed.
+
+The basic configuration shown here puts a single jail-, port-, and set-specific [path]``make.conf``
+ in [path]``/usr/local/etc/poudriere.d``
+.
+The filename in this example is created by combining the jail name, port name, and set name: [path]``10amd64-local-workstation-make.conf``
+.
+The system [path]``make.conf``
+ and this new file are combined at build time to create the [path]``make.conf``
+ used by the build jail.
+
+Packages to be built are entered in [path]``10amd64-local-workstation-pkglist``
+:
+
+[source]
+----
+editors/emacs
+devel/git
+ports-mgmt/pkg
+...
+----
+
+
+Options and dependencies for the specified ports are configured:
+
+----
+# poudriere options -j 10amd64 -p local -z workstation -f 10amd64-local-workstation-pkglist
+----
+
+
+Finally, packages are built and a package repository is created:
+
+----
+# poudriere bulk -j 10amd64 -p local -z workstation -f 10amd64-local-workstation-pkglist
+----
+
+
+While running, pressing kbd:[Ctrl+t]
+	displays the current state of the build. [app]``Poudriere`` also builds files in [path]``/poudriere/logs/bulk/jailname``
+	that can be used with a web server to display build information.
+
+After completion, the new packages are now available for installation from the [app]``poudriere``	repository.
+
+For more information on using [app]``poudriere``, see  {{< manpage "poudriere" "8" >}}
+	and the main web site, https://github.com/freebsd/poudriere/wiki.
+
+=== Configuring pkg Clients to Use a Poudriere Repository
+
+
+While it is possible to use both a custom repository along side of the official repository, sometimes it is useful to disable the official repository.
+This is done by creating a configuration file that overrides and disables the official configuration file.
+Create [path]``/usr/local/etc/pkg/repos/FreeBSD.conf``
+	that contains the following:
+
+[source]
+----
+FreeBSD: {
+	enabled: no
+}
+----
+
+
+Usually it is easiest to serve a poudriere repository to the client machines via HTTP.
+Set up a webserver to serve up the package directory, for instance: [path]``/usr/local/poudriere/data/packages/10amd64``
+, where [path]``10amd64``
+	is the name of the build.
+
+If the URL to the package repository is: ``http://pkg.example.com/10amd64``, then the repository configuration file in [path]``/usr/local/etc/pkg/repos/custom.conf``
+	would look like:
+
+[source]
+----
+custom: {
+	url: "http://pkg.example.com/10amd64",
+	enabled: yes,
+}
+----
+
+[[_ports_nextsteps]]
+== Post-Installation Considerations
+
+
+Regardless of whether the software was installed from a binary package or port, most third-party applications require some level of configuration after installation.
+The following commands and locations can be used to help determine what was installed with the application.
+
+* Most applications install at least one default configuration file in [path]``/usr/local/etc`` . In cases where an application has a large number of configuration files, a subdirectory will be created to hold them. Often, sample configuration files are installed which end with a suffix such as [path]``.sample`` . The configuration files should be reviewed and possibly edited to meet the system's needs. To edit a sample file, first copy it without the [path]``.sample`` extension.
+* Applications which provide documentation will install it into [path]``/usr/local/share/doc`` and many applications also install manual pages. This documentation should be consulted before continuing.
+* Some applications run services which must be added to [path]``/etc/rc.conf`` before starting the application. These applications usually install a startup script in [path]``/usr/local/etc/rc.d`` . See <<_configtuning_starting_services,Starting Services>> for more information.
++
+NOTE: By design, applications do not run their startup script upon installation, nor do they run their stop script upon deinstallation or upgrade.
+This decision is left to the individual system administrator.
++
+
+* Users of  {{< manpage "csh" "1" >}} should run [command]``rehash`` to rebuild the known binary list in the shells [var]``PATH``.
+* Use [command]``pkg info`` to determine which files, man pages, and binaries were installed with the application.
+
+
+[[_ports_broken]]
+== Dealing with Broken Ports
+
+
+When a port does not build or install, try the following:
+
+. Search to see if there is a fix pending for the port in the link:@@URL_RELPREFIX@@/support.html[Problem Report database]. If so, implementing the proposed fix may fix the issue.
+. Ask the maintainer of the port for help. Type [command]``make maintainer``	  in the ports skeleton or read the port's [path]``Makefile`` to find the maintainer's email address. Remember to include the `$FreeBSD:` line from the port's [path]``Makefile`` and the output leading up to the error in the email to the maintainer.
++
+NOTE: Some ports are not maintained by an individual but instead by a group maintainer represented by a link:/doc/en_US.ISO8859-1/en_US.ISO8859-1/articles/mailing-list-faq/article.html[mailing
+	      list].
+Many, but not all, of these addresses look like 
+mailto:freebsd-listname@FreeBSD.org[<freebsd-listname@FreeBSD.org>]
+.
+Please take this into account when sending an email.
+
+In particular, ports maintained by 
+mailto:ports@FreeBSD.org[<ports@FreeBSD.org>]
+ are not maintained by a specific individual.
+Instead, any fixes and support come from the general community who subscribe to that mailing list.
+More volunteers are always needed!
++
+
+
++
+If there is no response to the email, use Bugzilla to submit a bug report using the instructions in link:/doc/en_US.ISO8859-1/en_US.ISO8859-1/articles/problem-reports/article.html[Writing
+FreeBSD Problem Reports].
+. Fix it!  The link:/doc/en_US.ISO8859-1/en_US.ISO8859-1/books/porters-handbook/index.html[Porter's Handbook] includes detailed information on the ports infrastructure so that you can fix the occasional broken port or even submit your own!
+. Install the package instead of the port using the instructions in <<_pkgng_intro>>.
+
+
+ifdef::backend-docbook[]
+[index]
+== Index
+// Generated automatically by the DocBook toolchain.
+endif::backend-docbook[]

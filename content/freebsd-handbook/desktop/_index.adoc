@@ -1,0 +1,765 @@
+---
+title: "Desktop Applications"
+---
+[[_desktop]]
+= Desktop Applications
+:doctype: book
+:sectnums:
+:toc: left
+:icons: font
+:experimental:
+:sourcedir: .
+:imagesdir: ./images
+
+[[_desktop_synopsis]]
+== Synopsis
+
+
+While FreeBSD is popular as a server for its performance and stability, it is also suited for day-to-day use as a desktop.
+With over 24,000 applications available as FreeBSD packages or ports, it is easy to build a customized desktop that runs a wide variety of desktop applications.
+This chapter demonstrates how to install numerous desktop applications, including web browsers, productivity software, document viewers, and financial software.
+
+[NOTE]
+====
+Users who prefer to install a pre-built desktop version of FreeBSD rather than configuring one from scratch should refer to the http://www.trueos.org/[trueos.org
+	  website.]
+====
+
+
+Readers of this chapter should know how to:
+
+* Install additional software using packages or ports as described in <<_ports>>.
+* Install X and a window manager as described in <<_x11>>.
+
+
+For information on how to configure a multimedia environment, refer to <<_multimedia>>.
+
+[[_desktop_browsers]]
+== Browsers
+
+(((browsers,web)))
+
+
+FreeBSD does not come with a pre-installed web browser.
+Instead, the https://www.FreeBSD.org/ports/www.html[www] category of the Ports Collection contains many browsers which can be installed as a package or compiled from the Ports Collection.
+
+The [app]``KDE`` and [app]``GNOME`` desktop environments include their own HTML browser.
+Refer to <<_x11_wm>> for more information on how to set up these complete desktops.
+
+Some lightweight browsers include [package]#www/dillo2#
+, [package]#www/links#
+, and [package]#www/w3m#
+.
+
+This section demonstrates how to install the following popular web browsers and indicates if the application is resource-heavy, takes time to compile from ports, or has any major dependencies.
+
+[cols="1,1,1,1", frame="none", options="header"]
+|===
+| Application Name
+| Resources Needed
+| Installation from Ports
+| Notes
+
+
+|[app]``Firefox``
+|medium
+|heavy
+|FreeBSD, Linux(TM)
+, and localized versions are
+	      available
+
+|[app]``Opera``
+|light
+|light
+|FreeBSD and Linux(TM)
+ versions are available
+
+|[app]``Konqueror``
+|medium
+|heavy
+|Requires [app]``KDE``
+	      libraries
+
+|[app]``Chromium``
+|medium
+|heavy
+|Requires [app]``Gtk+``
+|===
+
+=== Firefox
+
+[app]``
+Firefox`` is an open source browser that features a standards-compliant HTML display engine, tabbed browsing, popup blocking, extensions, improved security, and more. [app]``Firefox`` is based on the [app]``Mozilla`` codebase.
+
+To install the package of the latest release version of [app]``Firefox``, type:
+
+----
+# pkg install firefox
+----
+
+
+To instead install [app]``Firefox``	Extended Support Release (ESR) version, use:
+
+----
+# pkg install firefox-esr
+----
+
+
+Localized versions are available in [package]#www/firefox-i18n#
+ and [package]#www/firefox-esr-i18n#
+.
+
+The Ports Collection can instead be used to compile the desired version of [app]``Firefox`` from source code.
+This example builds [package]#www/firefox#
+, where `firefox` can be replaced with the ESR or localized version to install.
+
+----
+# cd /usr/ports/www/firefox
+# make install clean
+----
+
+=== Opera
+
+(((Opera)))
+
+[app]``
+Opera`` is a full-featured and standards-compliant browser which is still lightweight and fast.
+It comes with a built-in mail and news reader, an IRC client, an RSS/Atom feeds reader, and more.
+It is available as a native FreeBSD version and as a version that runs under Linux(TM)
+ emulation.
+
+This command installs the package of the FreeBSD version of [app]``Opera``.
+Replace `opera` with `linux-opera`	to instead install the Linux(TM)
+ version.
+
+----
+# pkg install opera
+----
+
+
+Alternately, install either version through the Ports Collection.
+This example compiles the native version:
+
+----
+# cd /usr/ports/www/opera
+# make install clean
+----
+
+
+To install the Linux(TM)
+ version, substitute `linux-opera` in place of ``opera``.
+
+To install Adobe(TM)Flash(TM)
+ plugin support, first compile the [package]#www/linux-flashplayer#
+	port.
+Licensing restrictions prevent making a package available.
+Then install [package]#www/opera-linuxplugins#
+.
+This example compiles both applications from ports:
+
+----
+# cd /usr/ports/www/linux-flashplayer
+# make install clean
+# cd /usr/ports/www/opera-linuxplugins
+# make install clean
+----
+
+
+Once installed, check the presence of the plugin by starting the browser, entering `opera:plugins` in the location bar and pressing kbd:[Enter]
+.
+A list should appear with all the currently available plugins.
+
+To add the [app]``Java(R)`` plugin, follow install [package]#java/icedtea-web#
+.
+
+=== Konqueror
+
+(((Konqueror)))
+
+[app]``
+Konqueror`` is more than a web browser as it is also a file manager and a multimedia viewer.
+It is included in the [package]#x11/kde4-baseapps#
+ package or port.
+
+[app]``Konqueror`` supports WebKit as well as its own KHTML.
+WebKit is a rendering engine used by many modern browsers including Chromium.
+To use WebKit with [app]``Konqueror`` on FreeBSD, install the [package]#www/kwebkitpart#
+ package or port.
+This example installs the package:
+
+----
+# pkg install kwebkitpart
+----
+
+
+To install from the Ports Collection:
+
+----
+# cd /usr/ports/www/kwebkitpart
+# make install clean
+----
+
+
+To enable WebKit within [app]``Konqueror``, click "`Settings`"
+, "`Configure Konqueror`"
+.
+In the "`General`"
+ settings page, click the drop-down menu next to "`Default web browser
+	engine`"
+ and change "`KHTML`"
+ to "`WebKit`"
+.
+
+[app]``Konqueror`` also supports [app]``Flash(TM)``.
+A "`How To`"
+	guide for getting [app]``Flash(TM)`` support on [app]``Konqueror`` is available at http://freebsd.kde.org/howtos/konqueror-flash.php.
+
+=== Chromium
+
+(((Chromium)))
+
+[app]``
+Chromium`` is an open source browser project that aims to build a safer, faster, and more stable web browsing experience. [app]``Chromium`` features tabbed browsing, popup blocking, extensions, and much more. [app]``Chromium`` is the open source project upon which the Google Chrome web browser is based.
+
+[app]``Chromium`` can be installed as a package by typing:
+
+----
+# pkg install chromium
+----
+
+
+Alternatively, [app]``Chromium`` can be compiled from source using the Ports Collection:
+
+----
+# cd /usr/ports/www/chromium
+# make install clean
+----
+
+[NOTE]
+====
+The executable for [app]``Chromium``	  is [path]``/usr/local/bin/chrome``
+, not [path]``/usr/local/bin/chromium``
+.
+====
+
+[[_desktop_productivity]]
+== Productivity
+
+
+When it comes to productivity, users often look for an office suite or an easy-to-use word processor.
+While some <<_x11_wm,desktop environments>> like [app]``KDE`` provide an office suite, there is no default productivity package.
+Several office suites and graphical word processors are available for FreeBSD, regardless of the installed window manager.
+
+This section demonstrates how to install the following popular productivity software and indicates if the application is resource-heavy, takes time to compile from ports, or has any major dependencies.
+
+[cols="1,1,1,1", frame="none", options="header"]
+|===
+| Application Name
+| Resources Needed
+| Installation from Ports
+| Major Dependencies
+
+
+|[app]``Calligra``
+|light
+|heavy
+|[app]``KDE``
+
+|[app]``AbiWord``
+|light
+|light
+|[app]``Gtk+`` or
+	      [app]``GNOME``
+
+|[app]``The Gimp``
+|light
+|heavy
+|[app]``Gtk+``
+
+|[app]``Apache
+		OpenOffice``
+|heavy
+|huge
+|[app]``JDK(R)`` and
+	      [app]``Mozilla``
+
+|[app]``LibreOffice``
+|somewhat heavy
+|huge
+|[app]``Gtk+``, or
+	      [app]``KDE``/
+	      [app]``GNOME``, or
+	      [app]``JDK(R)``
+|===
+
+=== Calligra
+
+(((Calligra)))
+
+(((office suite,Calligra)))
+
+
+The KDE desktop environment includes an office suite which can be installed separately from [app]``KDE``. [app]``Calligra`` includes standard components that can be found in other office suites. [app]``Words`` is the word processor, [app]``Sheets`` is the spreadsheet program, [app]``Stage`` manages slide presentations, and [app]``Karbon`` is used to draw graphical documents.
+
+In FreeBSD, [package]#editors/calligra#
+ can be installed as a package or a port.
+To install the package:
+
+----
+# pkg install calligra
+----
+
+
+If the package is not available, use the Ports Collection instead:
+
+----
+# cd /usr/ports/editors/calligra
+# make install clean
+----
+
+=== AbiWord
+
+[app]``
+AbiWord`` is a free word processing program similar in look and feel to [app]``Microsoft(TM)
+ Word``.
+It is fast, contains many features, and is user-friendly.
+
+[app]``AbiWord`` can import or export many file formats, including some proprietary ones like Microsoft(TM)[path]``.rtf``
+.
+
+To install the [app]``AbiWord``	package:
+
+----
+# pkg install abiword
+----
+
+
+If the package is not available, it can be compiled from the Ports Collection:
+
+----
+# cd /usr/ports/editors/abiword
+# make install clean
+----
+
+=== The GIMP
+
+(((The GIMP)))
+
+
+For image authoring or picture retouching, [app]``The GIMP`` provides a sophisticated image manipulation program.
+It can be used as a simple paint program or as a quality photo retouching suite.
+It supports a large number of plugins and features a scripting interface. [app]``The GIMP`` can read and write a wide range of file formats and supports interfaces with scanners and tablets.
+
+To install the package:
+
+----
+# pkg install gimp
+----
+
+
+Alternately, use the Ports Collection:
+
+----
+# cd /usr/ports/graphics/gimp
+# make install clean
+----
+
+
+The graphics category (https://www.FreeBSD.org/ports/graphics.html[freebsd.org/ports/graphics.html]) of the Ports Collection contains several [app]``GIMP``-related plugins, help files, and user manuals.
+
+=== Apache OpenOffice
+
+(((
+	  Apache OpenOffice
+	)))
+
+(((office suite,
+	  Apache OpenOffice
+	)))
+
+[app]``
+Apache OpenOffice`` is an open source office suite which is developed under the wing of the Apache Software Foundation's Incubator.
+It includes all of the applications found in a complete office productivity suite: a word processor, spreadsheet, presentation manager, and drawing program.
+Its user interface is similar to other office suites, and it can import and export in various popular file formats.
+It is available in a number of different languages and internationalization has been extended to interfaces, spell checkers, and dictionaries.
+
+The word processor of [app]``Apache
+	  OpenOffice`` uses a native XML file format for increased portability and flexibility.
+The spreadsheet program features a macro language which can be interfaced with external databases.
+ [app]``Apache
+	  OpenOffice`` is stable and runs natively on Windows(TM)
+, Solaris(TM)
+, Linux(TM)
+, FreeBSD, and Mac{nbsp}OS(TM)
+{nbsp}X.
+More information about [app]``Apache
+	  OpenOffice`` can be found at http://openoffice.org/[openoffice.org].
+For FreeBSD specific information refer to http://porting.openoffice.org/freebsd/[porting.openoffice.org/freebsd/].
+
+To install the [app]``Apache
+	  OpenOffice`` package:
+
+----
+# pkg install apache-openoffice
+----
+
+
+Once the package is installed, type the following command to launch [app]``Apache OpenOffice``:
+
+----
+% openoffice-X.Y.Z
+----
+
+
+where [replaceable]``X.Y.Z`` is the version number of the installed version of [app]``Apache
+	  OpenOffice``.
+The first time [app]``Apache OpenOffice`` launches, some questions will be asked and a [path]``.openoffice.org``
+ folder will be created in the user's home directory.
+
+If the desired [app]``Apache
+	  OpenOffice`` package is not available, compiling the port is still an option.
+However, this requires a lot of disk space and a fairly long time to compile:
+
+----
+# cd /usr/ports/editors/openoffice-4
+# make install clean
+----
+
+[NOTE]
+====
+To build a localized version, replace the previous command with:
+
+----
+# make LOCALIZED_LANG=your_language install clean
+----
+
+Replace [replaceable]``your_language`` with the correct language ISO-code.
+A list of supported language codes is available in [path]``files/Makefile.localized``
+, located in the port's directory.
+====
+
+=== LibreOffice
+
+(((office suite,LibreOffice)))
+
+[app]``
+LibreOffice`` is a free software office suite developed by http://www.documentfoundation.org/[documentfoundation.org].
+It is compatible with other major office suites and available on a variety of platforms.
+It is a rebranded fork of [app]``Apache OpenOffice`` and includes applications found in a complete office productivity suite: a word processor, spreadsheet, presentation manager, drawing program, database management program, and a tool for creating and editing mathematical formulæ.
+It is available in a number of different languages and internationalization has been extended to interfaces, spell checkers, and dictionaries.
+
+The word processor of [app]``LibreOffice`` uses a native XML file format for increased portability and flexibility.
+The spreadsheet program features a macro language which can be interfaced with external databases. [app]``LibreOffice`` is stable and runs natively on Windows(TM)
+, Linux(TM)
+, FreeBSD, and Mac{nbsp}OS(TM)
+{nbsp}X.
+More information about [app]``LibreOffice``	can be found at http://www.libreoffice.org/[libreoffice.org].
+
+To install the English version of the [app]``LibreOffice`` package:
+
+----
+# pkg install libreoffice
+----
+
+
+The editors category (https://www.FreeBSD.org/ports/editors.html[freebsd.org/ports/editors.html]) of the Ports Collection contains several localizations for [app]``LibreOffice``.
+When installing a localized package, replace `libreoffice`	with the name of the localized package.
+
+Once the package is installed, type the following command to run [app]``LibreOffice``:
+
+----
+% libreoffice
+----
+
+
+During the first launch, some questions will be asked and a [path]``.libreoffice``
+ folder will be created in the user's home directory.
+
+If the desired [app]``LibreOffice``	package is not available, compiling the port is still an option.
+However, this requires a lot of disk space and a fairly long time to compile.
+This example compiles the English version:
+
+----
+# cd /usr/ports/editors/libreoffice
+# make install clean
+----
+
+[NOTE]
+====
+To build a localized version, [command]``cd`` into the port directory of the desired language.
+Supported languages can be found in the editors category (https://www.FreeBSD.org/ports/editors.html[freebsd.org/ports/editors.html]) of the Ports Collection.
+====
+
+[[_desktop_viewers]]
+== Document Viewers
+
+
+Some new document formats have gained popularity since the advent of UNIX(R) and the viewers they require may not be available in the base system.
+This section demonstrates how to install the following document viewers:
+
+[cols="1,1,1,1", frame="none", options="header"]
+|===
+| Application Name
+| Resources Needed
+| Installation from Ports
+| Major Dependencies
+
+
+|[app]``Xpdf``
+|light
+|light
+|[app]``FreeType``
+
+|[app]``gv``
+|light
+|light
+|[app]``Xaw3d``
+
+|[app]``Geeqie``
+|light
+|light
+|[app]``Gtk+`` or
+	      [app]``GNOME``
+
+|[app]``ePDFView``
+|light
+|light
+|[app]``Gtk+``
+
+|[app]``Okular``
+|light
+|heavy
+|[app]``KDE``
+|===
+
+=== Xpdf
+
+(((PDF,viewing)))
+
+
+For users that prefer a small FreeBSD PDF viewer, [app]``Xpdf`` provides a light-weight and efficient viewer which requires few resources.
+It uses the standard X fonts and does not require any additional toolkits.
+
+To install the [app]``Xpdf``	package:
+
+----
+# pkg install xpdf
+----
+
+
+If the package is not available, use the Ports Collection:
+
+----
+# cd /usr/ports/graphics/xpdf
+# make install clean
+----
+
+
+Once the installation is complete, launch [command]``xpdf`` and use the right mouse button to activate the menu.
+
+=== gv
+
+(((PDF,viewing)))
+
+[app]``
+gv`` is a PostScript(TM)
+ and PDF viewer.
+It is based on [app]``ghostview``, but has a nicer look as it is based on the [app]``Xaw3d`` widget toolkit. [app]``gv`` has many configurable features, such as orientation, paper size, scale, and anti-aliasing.
+Almost any operation can be performed with either the keyboard or the mouse.
+
+To install [app]``gv`` as a package:
+
+----
+# pkg install gv
+----
+
+
+If a package is unavailable, use the Ports Collection:
+
+----
+# cd /usr/ports/print/gv
+# make install clean
+----
+
+=== Geeqie
+
+(((Geeqie)))
+
+[app]``
+Geeqie`` is a fork from the unmaintained [app]``GQView`` project, in an effort to move development forward and integrate the existing patches.
+ [app]``Geeqie`` is an image manager which supports viewing a file with a single click, launching an external editor, and thumbnail previews.
+It also features a slideshow mode and some basic file operations, making it easy to manage image collections and to find duplicate files.
+ [app]``Geeqie`` supports full screen viewing and internationalization.
+
+To install the [app]``Geeqie``	package:
+
+----
+# pkg install geeqie
+----
+
+
+If the package is not available, use the Ports Collection:
+
+----
+# cd /usr/ports/graphics/geeqie
+# make install clean
+----
+
+=== ePDFView
+
+(((ePDFView)))
+
+(((PDF,viewing)))
+
+[app]``
+ePDFView`` is a lightweight [acronym]``PDF`` document viewer that only uses the [app]``Gtk+`` and [app]``Poppler`` libraries.
+It is currently under development, but already opens most [acronym]``PDF`` files (even encrypted), save copies of documents, and has support for printing using [app]``CUPS``.
+
+To install [app]``ePDFView`` as a package:
+
+----
+# pkg install epdfview
+----
+
+
+If a package is unavailable, use the Ports Collection:
+
+----
+# cd /usr/ports/graphics/epdfview
+# make install clean
+----
+
+=== Okular
+
+(((PDF,viewing)))
+
+[app]``
+Okular`` is a universal document viewer based on [app]``KPDF`` for [app]``KDE``.
+It can open many document formats, including [acronym]``PDF``, PostScript(TM)
+, DjVu, [acronym]``CHM``, [acronym]``XPS``, and ePub.
+
+To install [app]``Okular`` as a package:
+
+----
+# pkg install okular
+----
+
+
+If a package is unavailable, use the Ports Collection:
+
+----
+# cd /usr/ports/graphics/okular
+# make install clean
+----
+
+[[_desktop_finance]]
+== Finance
+
+
+For managing personal finances on a FreeBSD desktop, some powerful and easy-to-use applications can be installed.
+Some are compatible with widespread file formats, such as the formats used by [app]``Quicken`` and [app]``Excel``.
+
+This section covers these programs:
+
+[cols="1,1,1,1", frame="none", options="header"]
+|===
+| Application Name
+| Resources Needed
+| Installation from Ports
+| Major Dependencies
+
+
+|[app]``GnuCash``
+|light
+|heavy
+|[app]``GNOME``
+
+|[app]``Gnumeric``
+|light
+|heavy
+|[app]``GNOME``
+
+|[app]``KMyMoney``
+|light
+|heavy
+|[app]``KDE``
+|===
+
+=== GnuCash
+
+[app]``
+GnuCash`` is part of the [app]``GNOME`` effort to provide user-friendly, yet powerful, applications to end-users. [app]``GnuCash`` can be used to keep track of income and expenses, bank accounts, and stocks.
+It features an intuitive interface while remaining professional.
+
+[app]``GnuCash`` provides a smart register, a hierarchical system of accounts, and many keyboard accelerators and auto-completion methods.
+It can split a single transaction into several more detailed pieces. [app]``GnuCash`` can import and merge [app]``Quicken`` QIF files.
+It also handles most international date and currency formats.
+
+To install the [app]``GnuCash``	package:
+
+----
+# pkg install gnucash
+----
+
+
+If the package is not available, use the Ports Collection:
+
+----
+# cd /usr/ports/finance/gnucash
+# make install clean
+----
+
+=== Gnumeric
+
+(((Gnumeric)))
+
+(((spreadsheet,Gnumeric)))
+
+[app]``
+Gnumeric`` is a spreadsheet program developed by the [app]``GNOME``	community.
+It features convenient automatic guessing of user input according to the cell format with an autofill system for many sequences.
+It can import files in a number of popular formats, including [app]``Excel``, [app]``Lotus 1-2-3``, and [app]``Quattro Pro``.
+It has a large number of built-in functions and allows all of the usual cell formats such as number, currency, date, time, and much more.
+
+To install [app]``Gnumeric`` as a package:
+
+----
+# pkg install gnumeric
+----
+
+
+If the package is not available, use the Ports Collection:
+
+----
+# cd /usr/ports/math/gnumeric
+# make install clean
+----
+
+=== KMyMoney
+
+(((spreadsheet,KMyMoney)))
+
+[app]``
+KMyMoney`` is a personal finance application created by the [app]``KDE``	community.
+ [app]``KMyMoney`` aims to provide the important features found in commercial personal finance manager applications.
+It also highlights ease-of-use and proper double-entry accounting among its features. [app]``KMyMoney`` imports from standard [app]``Quicken`` QIF files, tracks investments, handles multiple currencies, and provides a wealth of reports.
+
+To install [app]``KMyMoney`` as a package:
+
+----
+# pkg install kmymoney-kde4
+----
+
+
+If the package is not available, use the Ports Collection:
+
+----
+# cd /usr/ports/finance/kmymoney-kde4
+# make install clean
+----
+
+ifdef::backend-docbook[]
+[index]
+== Index
+// Generated automatically by the DocBook toolchain.
+endif::backend-docbook[]

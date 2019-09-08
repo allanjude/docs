@@ -1,0 +1,994 @@
+---
+title: "Printing"
+---
+= Printing
+:doctype: book
+:sectnums:
+:toc: left
+:icons: font
+:experimental:
+:sourcedir: .
+:imagesdir: ./images
+Warren Block
+
+
+Putting information on paper is a vital function, despite many attempts to eliminate it.
+Printing has two basic components.
+The data must be delivered to the printer, and must be in a form that the printer can understand.
+
+[[_printing_quick_start]]
+== Quick Start
+
+
+Basic printing can be set up quickly.
+The printer must be capable of printing plain [acronym]``ASCII`` text.
+For printing to other types of files, see <<_printing_lpd_filters>>.
+
+
+. Create a directory to store files while they are being printed:
++
+
+----
+# mkdir -p /var/spool/lpd/lp
+# chown daemon:daemon /var/spool/lpd/lp
+# chmod 770 /var/spool/lpd/lp
+----
+. As [username]``root`` , create [path]``/etc/printcap`` with these contents:
++
+
+[source]
+----
+lp:\
+	:lp=/dev/unlpt0:\  
+	:sh:\
+	:mx#0:\
+	:sd=/var/spool/lpd/lp:\
+	:lf=/var/log/lpd-errs:
+----
++
+This line is for a printer connected to a
+	      [acronym]``
+USB``
+ port.
+For a printer connected to a parallel or
+	      "`printer`"
+ port, use:
+For a printer connected directly to a network,
+	      use:
+Replace
+	      [replaceable]``
+network-printer-name``
+ with the
+	      [acronym]``DNS``
+ host name of the network
+	      printer.
+. Enable [command]``lpd`` by editing [path]``/etc/rc.conf`` , adding this line:
++
+
+[source]
+----
+lpd_enable="YES"
+----
++
+Start the service:
++
+
+----
+# service lpd startStarting lpd.
+----
+. Print a test:
++
+
+----
+# printf "1. This printer can print.\n2. This is the second line.\n" | lpr
+----
++
+TIP: If both lines do not start at the left border, but "`stairstep`"
+ instead, see <<_printing_lpd_filters_stairstep>>.
++
+
+
++
+Text files can now be printed with [command]``lpr``.
+Give the filename on the command line, or pipe output directly into [command]``lpr``.
++
+
+----
+% lpr textfile.txt
+% ls -lh | lpr
+----
+
+
+[[_printing_connections]]
+== Printer Connections
+
+
+Printers are connected to computer systems in a variety of ways.
+Small desktop printers are usually connected directly to a computer's [acronym]``USB`` port.
+Older printers are connected to a parallel or "`printer`"
+ port.
+Some printers are directly connected to a network, making it easy for multiple computers to share them.
+A few printers use a rare serial port connection.
+
+FreeBSD can communicate with all of these types of printers.
+
+[[_printing_connections_usb]]
+[acronym]``USB``::
+[acronym]``USB`` printers can be connected to any available [acronym]``USB`` port on the computer.
++
+When FreeBSD detects a [acronym]``USB`` printer, two device entries are created: [path]``/dev/ulpt0``
+and [path]``/dev/unlpt0``
+.
+Data sent to either device will be relayed to the printer.
+After each print job, [path]``ulpt0``
+resets the [acronym]``USB`` port.
+Resetting the port can cause problems with some printers, so the [path]``unlpt0``
+device is usually used instead. [path]``unlpt0``
+does not reset the USB port at all.
+
+[[_printing_connections_parallel]]
+Parallel ([acronym]``IEEE``-1284)::
+The parallel port device is [path]``/dev/lpt0``
+.
+This device appears whether a printer is attached or not, it is not autodetected.
++
+Vendors have largely moved away from these "`legacy`"
+ports, and many computers no longer have them.
+Adapters can be used to connect a parallel printer to a [acronym]``USB`` port.
+With such an adapter, the printer can be treated as if it were actually a [acronym]``USB`` printer.
+Devices called _print servers_ can also be used to connect parallel printers directly to a network.
+
+[[_printing_connections_serial]]
+Serial (RS-232)::
+Serial ports are another legacy port, rarely used for printers except in certain niche applications.
+Cables, connectors, and required wiring vary widely.
++
+For serial ports built into a motherboard, the serial device name is [path]``/dev/cuau0``
+or [path]``/dev/cuau1``
+.
+Serial [acronym]``USB`` adapters can also be used, and these will appear as [path]``/dev/cuaU0``
+.
++
+Several communication parameters must be known to communicate with a serial printer.
+The most important are _baud rate_ or [acronym]``BPS``	    (Bits Per Second) and __parity__.
+Values vary, but typical serial printers use a baud rate of 9600 and no parity.
+
+[[_printing_connections_network]]
+Network::
+Network printers are connected directly to the local computer network.
++
+The [acronym]``DNS`` hostname of the printer must be known.
+If the printer is assigned a dynamic address by [acronym]``DHCP``, [acronym]``DNS``	    should be dynamically updated so that the host name always has the correct [acronym]``IP`` address.
+Network printers are often given static [acronym]``IP``	    addresses to avoid this problem.
++
+Most network printers understand print jobs sent with the [acronym]``LPD`` protocol.
+A print queue name can also be specified.
+Some printers process data differently depending on which queue is used.
+For example, a `raw` queue prints the data unchanged, while the `text` queue adds carriage returns to plain text.
++
+Many network printers can also print data sent directly to port 9100.
+
+
+[[_printing_connections_summary]]
+=== Summary
+
+
+Wired network connections are usually the easiest to set up and give the fastest printing.
+For direct connection to the computer, [acronym]``USB`` is preferred for speed and simplicity.
+Parallel connections work but have limitations on cable length and speed.
+Serial connections are more difficult to configure.
+Cable wiring differs between models, and communication parameters like baud rate and parity bits must add to the complexity.
+Fortunately, serial printers are rare.
+
+[[_printing_pdls]]
+== Common Page Description Languages
+
+
+Data sent to a printer must be in a language that the printer can understand.
+These languages are called Page Description Languages, or [acronym]``PDL``s.
+[[_print_pdls_ascii]]
+[acronym]``ASCII``::
+Plain [acronym]``ASCII`` text is the simplest way to send data to a printer.
+Characters correspond one to one with what will be printed: an `A`	    in the data prints an `A` on the page.
+Very little formatting is available.
+There is no way to select a font or proportional spacing.
+The forced simplicity of plain [acronym]``ASCII`` means that text can be printed straight from the computer with little or no encoding or translation.
+The printed output corresponds directly with what was sent.
++
+Some inexpensive printers cannot print plain [acronym]``ASCII`` text.
+This makes them more difficult to set up, but it is usually still possible.
+
+[[_print_pdls_postscript]]
+PostScript(TM)::
+PostScript(TM)
+is almost the opposite of [acronym]``ASCII``.
+Rather than simple text, a PostScript(TM)
+program is a set of instructions that draw the final document.
+Different fonts and graphics can be used.
+However, this power comes at a price.
+The program that draws the page must be written.
+Usually this program is generated by application software, so the process is invisible to the user.
++
+Inexpensive printers sometimes leave out PostScript(TM)
+compatibility as a cost-saving measure.
+
+[[_print_pdls_pcl]]
+[acronym]``PCL`` (Printer Command Language)::
+[acronym]``PCL`` is an extension of [acronym]``ASCII``, adding escape sequences for formatting, font selection, and printing graphics.
+Many printers provide [acronym]``PCL5`` support.
+Some support the newer [acronym]``PCL6`` or [acronym]``PCLXL``.
+These later versions are supersets of [acronym]``PCL5`` and can provide faster printing.
+
+[[_print_pdls_host_based]]
+Host-Based::
+Manufacturers can reduce the cost of a printer by giving it a simple processor and very little memory.
+These printers are not capable of printing plain text.
+Instead, bitmaps of text and graphics are drawn by a driver on the host computer and then sent to the printer.
+These are called _host-based_	    printers.
++
+Communication between the driver and a host-based printer is often through proprietary or undocumented protocols, making them functional only on the most common operating systems.
+
+
+[[_print_pdls_table]]
+=== Converting PostScript to Other PDLs
+
+
+Many applications from the Ports Collection and FreeBSD utilities produce PostScript(TM)
+ output.
+This table shows the utilities available to convert that into other common [acronym]``PDL``s:
+[[_print_pdls_ps_to_other_tbl]]
+.Output [acronym]``PDL``s
+[cols="1,1,1", frame="none", options="header"]
+|===
+<| Output
+		PDL
+<| Generated By
+<| Notes
+
+|[acronym]``PCL`` or
+		[acronym]``PCL5``
+|[package]#print/ghostscript9-base#
+|``
+-sDEVICE=ljet4`` for monochrome,
+		`-sDEVICE=cljet5` for color
+
+|[acronym]``PCLXL`` or
+		[acronym]``PCL6``
+|[package]#print/ghostscript9-base#
+|``
+-sDEVICE=pxlmono`` for
+		monochrome, `-sDEVICE=pxlcolor` for
+		color
+
+|[acronym]``ESC/P2``
+|[package]#print/ghostscript9-base#
+|``
+-sDEVICE=uniprint``
+
+|[acronym]``XQX``
+|[package]#print/foo2zjs#
+|
+|===
+
+[[_print_pdls_summary]]
+=== Summary
+
+
+For the easiest printing, choose a printer that supports PostScript(TM)
+.
+Printers that support [acronym]``PCL``	are the next preferred.
+With [package]#print/ghostscript9-base#
+, these printers can be used as if they understood PostScript(TM)
+	natively.
+Printers that support PostScript(TM)
+ or [acronym]``PCL`` directly almost always support direct printing of plain [acronym]``ASCII`` text files also.
+
+Line-based printers like typical inkjets usually do not support PostScript(TM)
+ or [acronym]``PCL``.
+They often can print plain [acronym]``ASCII`` text files. [package]#print/ghostscript9-base#
+	supports the [acronym]``PDL``s used by some of these printers.
+However, printing an entire graphic-based page on these printers is often very slow due to the large amount of data to be transferred and printed.
+
+Host-based printers are often more difficult to set up.
+Some cannot be used at all because of proprietary [acronym]``PDL``s.
+Avoid these printers when possible.
+
+Descriptions of many [acronym]``PDL``s can be found at http://www.undocprint.org/formats/page_description_languages.
+The particular [acronym]``PDL`` used by various models of printers can be found at http://www.openprinting.org/printers.
+
+[[_printing_direct]]
+== Direct Printing
+
+
+For occasional printing, files can be sent directly to a printer device without any setup.
+For example, a file called [path]``sample.txt``
+ can be sent to a [acronym]``USB`` printer:
+
+----
+# cp sample.txt /dev/unlpt0
+----
+
+
+Direct printing to network printers depends on the abilities of the printer, but most accept print jobs on port 9100, and  {{< manpage "nc" "1" >}}
+ can be used with them.
+To print the same file to a printer with the [acronym]``DNS`` hostname of [replaceable]``netlaser``:
+
+----
+# nc netlaser 9100 < sample.txt
+----
+
+[[_printing_lpd]]
+== LPD (Line Printer Daemon)
+
+
+Printing a file in the background is called __spooling__.
+A spooler allows the user to continue with other programs on the computer without waiting for the printer to slowly complete the print job.
+
+FreeBSD includes a spooler called  {{< manpage "lpd" "8" >}}
+.
+Print jobs are submitted with  {{< manpage "lpr" "1" >}}
+.
+
+[[_printing_lpd_setup]]
+=== Initial Setup
+
+
+A directory for storing print jobs is created, ownership is set, and the permissions are set to prevent other users from viewing the contents of those files:
+
+----
+# mkdir -p /var/spool/lpd/lp
+# chown daemon:daemon /var/spool/lpd/lp
+# chmod 770 /var/spool/lpd/lp
+----
+
+
+Printers are defined in [path]``/etc/printcap``
+.
+An entry for each printer includes details like a name, the port where it is attached, and various other settings.
+Create [path]``/etc/printcap``
+ with these contents:
+
+[source]
+----
+lp:\				
+	:lp=/dev/unlpt0:\	
+	:sh:\			
+	:mx#0:\			
+	:sd=/var/spool/lpd/lp:\	
+	:lf=/var/log/lpd-errs:
+----
+The name of this printer.   {{< manpage "lpr" "1" >}}
+ sends print
+	    jobs to the `
+lp`
+ printer unless another
+	    printer is specified with [option]``-P``
+, so the
+	    default printer should be named
+	    ``lp``
+.
+The device where the printer is connected.  Replace
+	    this line with the appropriate one for the connection type
+	    shown here.
+Suppress the printing of a header page at the start of
+	    a print job.
+Do not limit the maximum size of a print job.
+The path to the spooling directory for this printer.
+	    Each printer uses its own spooling directory.
+The log file where errors on this printer will be
+	    reported.
+
+
+After creating [path]``/etc/printcap``
+, use  {{< manpage "chkprintcap" "8" >}}
+ to test it for errors:
+
+----
+# chkprintcap
+----
+
+
+Fix any reported problems before continuing.
+
+Enable  {{< manpage "lpd" "8" >}}
+ in [path]``/etc/rc.conf``
+:
+
+[source]
+----
+lpd_enable="YES"
+----
+
+
+Start the service:
+
+----
+# service lpd start
+----
+
+[[_printing_lpd_lpr]]
+=== Printing with lpr1
+
+
+Documents are sent to the printer with [command]``lpr``.
+A file to be printed can be named on the command line or piped into [command]``lpr``.
+These two commands are equivalent, sending the contents of [path]``doc.txt``
+ to the default printer:
+
+----
+% lpr doc.txt
+% cat doc.txt | lpr
+----
+
+
+Printers can be selected with [option]``-P``.
+To print to a printer called [replaceable]``laser``:
+
+----
+% lpr -Plaser doc.txt
+----
+
+[[_printing_lpd_filters]]
+=== Filters
+
+
+The examples shown so far have sent the contents of a text file directly to the printer.
+As long as the printer understands the content of those files, output will be printed correctly.
+
+Some printers are not capable of printing plain text, and the input file might not even be plain text.
+
+_Filters_ allow files to be translated or processed.
+The typical use is to translate one type of input, like plain text, into a form that the printer can understand, like PostScript(TM)
+ or [acronym]``PCL``.
+Filters can also be used to provide additional features, like adding page numbers or highlighting source code to make it easier to read.
+
+The filters discussed here are _input filters_ or __text filters__.
+These filters convert the incoming file into different forms.
+Use  {{< manpage "su" "1" >}}
+ to become [username]``root``
+ before creating the files.
+
+Filters are specified in [path]``/etc/printcap``
+ with the `if=` identifier.
+To use [path]``/usr/local/libexec/lf2crlf``
+ as a filter, modify [path]``/etc/printcap``
+ like this:
+
+[source]
+----
+lp:\
+	:lp=/dev/unlpt0:\
+	:sh:\
+	:mx#0:\
+	:sd=/var/spool/lpd/lp:\
+	:if=/usr/local/libexec/lf2crlf:\   
+	:lf=/var/log/lpd-errs:
+----``
+if=``
+ identifies the
+	    _input filter_
+ that will be used on
+	    incoming text.
+
+[TIP]
+====
+The backslash _line continuation_	  characters at the end of the lines in [path]``printcap``
+ entries reveal that an entry for a printer is really just one long line with entries delimited by colon characters.
+An earlier example can be rewritten as a single less-readable line:
+
+[source]
+----
+lp:lp=/dev/unlpt0:sh:mx#0:sd=/var/spool/lpd/lp:if=/usr/local/libexec/lf2crlf:lf=/var/log/lpd-errs:
+----
+====
+
+[[_printing_lpd_filters_stairstep]]
+==== Preventing Stairstepping on Plain Text Printers
+
+
+Typical FreeBSD text files contain only a single line feed character at the end of each line.
+These lines will "`stairstep`"
+ on a standard printer:
+
+[source]
+----
+A printed file looks
+                    like the steps of a staircase
+                                                 scattered by the wind
+----
+
+
+A filter can convert the newline characters into carriage returns and newlines.
+The carriage returns make the printer return to the left after each line.
+Create [path]``/usr/local/libexec/lf2crlf``
+ with these contents:
+
+[source]
+----
+#!/bin/sh
+CR=$'\r'
+/usr/bin/sed -e "s/$/${CR}/g"
+----
+
+
+Set the permissions and make it executable:
+
+----
+# chmod 555 /usr/local/libexec/lf2crlf
+----
+
+
+Modify [path]``/etc/printcap``
+ to use the new filter:
+
+[source]
+----
+:if=/usr/local/libexec/lf2crlf:\
+----
+
+
+Test the filter by printing the same plain text file.
+The carriage returns will cause each line to start at the left side of the page.
+
+[[_printing_lpd_filters_enscript]]
+==== Fancy Plain Text on PostScript Printers with print/enscript
+
+[acronym]``
+GNU``[app]``Enscript`` converts plain text files into nicely-formatted PostScript(TM)
+ for printing on PostScript(TM)
+ printers.
+It adds page numbers, wraps long lines, and provides numerous other features to make printed text files easier to read.
+Depending on the local paper size, install either [package]#print/enscript-letter#
+ or [package]#print/enscript-a4#
+ from the Ports Collection.
+
+Create [path]``/usr/local/libexec/enscript``
+	  with these contents:
+
+[source]
+----
+#!/bin/sh
+/usr/local/bin/enscript -o -
+----
+
+
+Set the permissions and make it executable:
+
+----
+# chmod 555 /usr/local/libexec/enscript
+----
+
+
+Modify [path]``/etc/printcap``
+ to use the new filter:
+
+[source]
+----
+:if=/usr/local/libexec/enscript:\
+----
+
+
+Test the filter by printing a plain text file.
+
+[[_printing_lpd_filters_ps2pcl]]
+==== Printing PostScript to PCL Printers
+
+
+Many programs produce PostScript(TM)
+ documents.
+However, inexpensive printers often only understand plain text or [acronym]``PCL``.
+This filter converts PostScript(TM)
+ files to [acronym]``PCL`` before sending them to the printer.
+
+Install the Ghostscript PostScript(TM)
+ interpreter, [package]#print/ghostscript9-base#
+, from the Ports Collection.
+
+Create [path]``/usr/local/libexec/ps2pcl``
+	  with these contents:
+
+[source]
+----
+#!/bin/sh
+/usr/local/bin/gs -dSAFER -dNOPAUSE -dBATCH -q -sDEVICE=ljet4 -sOutputFile=- -
+----
+
+
+Set the permissions and make it executable:
+
+----
+# chmod 555 /usr/local/libexec/ps2pcl
+----
+
+
+PostScript(TM)
+ input sent to this script will be rendered and converted to [acronym]``PCL`` before being sent on to the printer.
+
+Modify [path]``/etc/printcap``
+ to use this new input filter:
+
+[source]
+----
+:if=/usr/local/libexec/ps2pcl:\
+----
+
+
+Test the filter by sending a small PostScript(TM)
+ program to it:
+
+----
+% printf "%%\!PS \n /Helvetica findfont 18 scalefont setfont \
+72 432 moveto (PostScript printing successful.) show showpage \004" | lpr
+----
+
+[[_printing_lpd_filters_smart]]
+==== Smart Filters
+
+
+A filter that detects the type of input and automatically converts it to the correct format for the printer can be very convenient.
+The first two characters of a PostScript(TM)
+ file are usually ``%!``.
+A filter can detect those two characters.
+ PostScript(TM)
+ files can be sent on to a PostScript(TM)
+ printer unchanged.
+Text files can be converted to PostScript(TM)
+ with [app]``Enscript`` as shown earlier.
+Create [path]``/usr/local/libexec/psif``
+ with these contents:
+
+[source]
+----
+#!/bin/sh
+#
+#  psif - Print PostScript or plain text on a PostScript printer
+#
+IFS="" read -r first_line
+first_two_chars=`expr "$first_line" : '\(..\)'`
+
+case "$first_two_chars" in
+%!)
+    # %! : PostScript job, print it.
+    echo "$first_line" && cat && exit 0
+    exit 2
+    ;;
+*)
+    # otherwise, format with enscript
+    ( echo "$first_line"; cat ) | /usr/local/bin/enscript -o - && exit 0
+    exit 2
+    ;;
+esac
+----
+
+
+Set the permissions and make it executable:
+
+----
+# chmod 555 /usr/local/libexec/psif
+----
+
+
+Modify [path]``/etc/printcap``
+ to use this new input filter:
+
+[source]
+----
+:if=/usr/local/libexec/psif:\
+----
+
+
+Test the filter by printing PostScript(TM)
+ and plain text files.
+
+[[_printing_lpd_filters_othersmart]]
+==== Other Smart Filters
+
+
+Writing a filter that detects many different types of input and formats them correctly is challenging. [package]#print/apsfilter#
+ from the Ports Collection is a smart "`magic`"
+ filter that detects dozens of file types and automatically converts them to the [acronym]``PDL`` understood by the printer.
+See http://www.apsfilter.org for more details.
+
+[[_printing_lpd_queues]]
+=== Multiple Queues
+
+
+The entries in [path]``/etc/printcap``
+ are really definitions of __queues__.
+There can be more than one queue for a single printer.
+When combined with filters, multiple queues provide users more control over how their jobs are printed.
+
+As an example, consider a networked PostScript(TM)
+ laser printer in an office.
+Most users want to print plain text, but a few advanced users want to be able to print PostScript(TM)
+	files directly.
+Two entries can be created for the same printer in [path]``/etc/printcap``
+:
+
+[source]
+----
+textprinter:\
+	:lp=9100@officelaser:\
+	:sh:\
+	:mx#0:\
+	:sd=/var/spool/lpd/textprinter:\
+	:if=/usr/local/libexec/enscript:\
+	:lf=/var/log/lpd-errs:
+
+psprinter:\
+	:lp=9100@officelaser:\
+	:sh:\
+	:mx#0:\
+	:sd=/var/spool/lpd/psprinter:\
+	:lf=/var/log/lpd-errs:
+----
+
+
+Documents sent to `textprinter` will be formatted by the [path]``/usr/local/libexec/enscript``
+ filter shown in an earlier example.
+Advanced users can print PostScript(TM)
+	files on ``psprinter``, where no filtering is done.
+
+This multiple queue technique can be used to provide direct access to all kinds of printer features.
+A printer with a duplexer could use two queues, one for ordinary single-sided printing, and one with a filter that sends the command sequence to enable double-sided printing and then sends the incoming file.
+
+[[_printing_lpd_monitor]]
+=== Monitoring and Controlling Printing
+
+
+Several utilities are available to monitor print jobs and check and control printer operation.
+
+[[_printing_lpd_monitor_lpq]]
+==== lpq1
+
+ {{< manpage "lpq" "1" >}}
+ shows the status of a user's print jobs.
+Print jobs from other users are not shown.
+
+Show the current user's pending jobs on a single printer:
+
+----
+% lpq -PlpRank   Owner      Job  Files                                 Total Size
+1st    jsmith     0    (standard input)                      12792 bytes
+----
+
+
+Show the current user's pending jobs on all printers:
+
+----
+% lpq -alp:
+Rank   Owner      Job  Files                                 Total Size
+1st    jsmith     1    (standard input)                      27320 bytes
+
+laser:
+Rank   Owner      Job  Files                                 Total Size
+1st    jsmith     287  (standard input)                      22443 bytes
+----
+
+[[_printing_lpd_monitor_lprm]]
+==== lprm1
+
+ {{< manpage "lprm" "1" >}}
+ is used to remove print jobs.
+Normal users are only allowed to remove their own jobs. [username]``root``
+ can remove any or all jobs.
+
+Remove all pending jobs from a printer:
+
+----
+# lprm -Plp -dfA002smithy dequeued
+cfA002smithy dequeued
+dfA003smithy dequeued
+cfA003smithy dequeued
+dfA004smithy dequeued
+cfA004smithy dequeued
+----
+
+
+Remove a single job from a printer.  {{< manpage "lpq" "1" >}}
+ is used to find the job number.
+
+----
+% lpqRank   Owner      Job  Files                                 Total Size
+1st    jsmith     5    (standard input)                      12188 bytes
+% lprm -Plp 5dfA005smithy dequeued
+cfA005smithy dequeued
+----
+
+[[_printing_lpd_monitor_lpc]]
+==== lpc8
+
+ {{< manpage "lpc" "8" >}}
+ is used to check and modify printer status. `lpc` is followed by a command and an optional printer name.
+ `all` can be used instead of a specific printer name, and the command will be applied to all printers.
+Normal users can view status with  {{< manpage "lpc" "8" >}}
+.
+Only [username]``root``
+ can use commands which modify printer status.
+
+Show the status of all printers:
+
+----
+% lpc status alllp:
+	queuing is enabled
+	printing is enabled
+	1 entry in spool area
+	printer idle
+laser:
+	queuing is enabled
+	printing is enabled
+	1 entry in spool area
+	waiting for laser to come up
+----
+
+
+Prevent a printer from accepting new jobs, then begin accepting new jobs again:
+
+----
+# lpc disable lplp:
+	queuing disabled
+# lpc enable lplp:
+	queuing enabled
+----
+
+
+Stop printing, but continue to accept new jobs.
+Then begin printing again:
+
+----
+# lpc stop lplp:
+	printing disabled
+# lpc start lplp:
+	printing enabled
+	daemon started
+----
+
+
+Restart a printer after some error condition:
+
+----
+# lpc restart lplp:
+	no daemon to abort
+	printing enabled
+	daemon restarted
+----
+
+
+Turn the print queue off and disable printing, with a message to explain the problem to users:
+
+----
+# lpc down lp Repair parts will arrive on Mondaylp:
+	printer and queuing disabled
+	status message is now: Repair parts will arrive on Monday
+----
+
+
+Re-enable a printer that is down:
+
+----
+# lpc up lplp:
+	printing enabled
+	daemon started
+----
+
+
+See  {{< manpage "lpc" "8" >}}
+ for more commands and options.
+
+[[_printing_lpd_shared]]
+=== Shared Printers
+
+
+Printers are often shared by multiple users in businesses and schools.
+Additional features are provided to make sharing printers more convenient.
+
+[[_printing_shared_aliases]]
+==== Aliases
+
+
+The printer name is set in the first line of the entry in [path]``/etc/printcap``
+.
+Additional names, or __aliases__, can be added after that name.
+Aliases are separated from the name and each other by vertical bars:
+
+[source]
+----
+lp|repairsprinter|salesprinter:\
+----
+
+
+Aliases can be used in place of the printer name.
+For example, users in the Sales department print to their printer with
+
+----
+% lpr -Psalesprinter sales-report.txt
+----
+
+
+Users in the Repairs department print to _their_ printer with
+
+----
+% lpr -Prepairsprinter repairs-report.txt
+----
+
+
+All of the documents print on that single printer.
+When the Sales department grows enough to need their own printer, the alias can be removed from the shared printer entry and used as the name of a new printer.
+Users in both departments continue to use the same commands, but the Sales documents are sent to the new printer.
+
+[[_printing_shared_headers]]
+==== Header Pages
+
+
+It can be difficult for users to locate their documents in the stack of pages produced by a busy shared printer. _Header pages_ were created to solve this problem.
+A header page with the user name and document name is printed before each print job.
+These pages are also sometimes called _banner_ or _separator_ pages.
+
+Enabling header pages differs depending on whether the printer is connected directly to the computer with a [acronym]``USB``, parallel, or serial cable, or is connected remotely over a network.
+
+Header pages on directly-connected printers are enabled by removing the `:sh:\` (Suppress Header) line from the entry in [path]``/etc/printcap``
+.
+These header pages only use line feed characters for new lines.
+Some printers will need the [path]``/usr/share/examples/printing/hpif``
+	  filter to prevent stairstepped text.
+The filter configures [acronym]``PCL`` printers to print both carriage returns and line feeds when a line feed is received.
+
+Header pages for network printers must be configured on the printer itself.
+Header page entries in [path]``/etc/printcap``
+ are ignored.
+Settings are usually available from the printer front panel or a configuration web page accessible with a web browser.
+
+[[_printing_lpd_references]]
+=== References
+
+
+Example files: [path]``/usr/share/examples/printing/``
+.
+
+The __4.3BSD Line Printer Spooler
+	  Manual__, [path]``/usr/share/doc/smm/07.lpd/paper.ascii.gz``
+.
+
+Manual pages:  {{< manpage "printcap" "5" >}}
+,  {{< manpage "lpd" "8" >}}
+,  {{< manpage "lpr" "1" >}}
+,  {{< manpage "lpc" "8" >}}
+,  {{< manpage "lprm" "1" >}}
+,  {{< manpage "lpq" "1" >}}
+.
+
+[[_printing_other]]
+== Other Printing Systems
+
+
+Several other printing systems are available in addition to the built-in  {{< manpage "lpd" "8" >}}
+.
+These systems offer support for other protocols or additional features.
+
+[[_printing_other_cups]]
+=== CUPS (Common UNIX(R) Printing System)
+
+[acronym]``
+CUPS`` is a popular printing system available on many operating systems.
+Using [acronym]``CUPS`` on FreeBSD is documented in a separate article:link:/doc/en_US.ISO8859-1/en_US.ISO8859-1/articles/cups
+
+[[_printing_other_hplip]]
+=== HPLIP
+
+
+Hewlett Packard provides a printing system that supports many of their inkjet and laser printers.
+The port is [package]#print/hplip#
+.
+The main web page is at http://hplipopensource.com/hplip-web/index.html.
+The port handles all the installation details on FreeBSD.
+Configuration information is shown at http://hplipopensource.com/hplip-web/install/manual/hp_setup.html.
+
+[[_printing_other_lprng]]
+=== LPRng
+
+[app]``
+LPRng`` was developed as an enhanced alternative to  {{< manpage "lpd" "8" >}}
+.
+The port is [package]#sysutils/LPRng#
+.
+For details and documentation, see http://www.lprng.com/.

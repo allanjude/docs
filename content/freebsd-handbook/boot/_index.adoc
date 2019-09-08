@@ -1,0 +1,682 @@
+---
+title: "The FreeBSD Booting Process"
+---
+[[_boot]]
+= The FreeBSD Booting Process
+:doctype: book
+:sectnums:
+:toc: left
+:icons: font
+:experimental:
+:sourcedir: .
+:imagesdir: ./images
+
+[[_boot_synopsis]]
+== Synopsis
+
+(((booting)))
+
+(((bootstrap)))
+
+
+The process of starting a computer and loading the operating system is referred to as "`the bootstrap process`"
+, or "`booting`"
+.
+FreeBSD's boot process provides a great deal of flexibility in customizing what happens when the system starts, including the ability to select from different operating systems installed on the same computer, different versions of the same operating system, or a different installed kernel.
+
+This chapter details the configuration options that can be set.
+It demonstrates how to customize the FreeBSD boot process, including everything that happens until the FreeBSD kernel has started, probed for devices, and started  {{< manpage "init" "8" >}}
+.
+This occurs when the text color of the boot messages changes from bright white to grey.
+
+After reading this chapter, you will recognize:
+
+* The components of the FreeBSD bootstrap system and how they interact.
+* The options that can be passed to the components in the FreeBSD bootstrap in order to control the boot process.
+* How to configure a customized boot splash screen.
+* The basics of setting device hints.
+* How to boot into single- and multi-user mode and how to properly shut down a FreeBSD system.
+
+
+[NOTE]
+====
+This chapter only describes the boot process for FreeBSD running on x86 and amd64 systems.
+====
+
+[[_boot_introduction]]
+== FreeBSD Boot Process
+
+
+Turning on a computer and starting the operating system poses an interesting dilemma.
+By definition, the computer does not know how to do anything until the operating system is started.
+This includes running programs from the disk.
+If the computer can not run a program from the disk without the operating system, and the operating system programs are on the disk, how is the operating system started?
+
+This problem parallels one in the book [ref]_The
+	Adventures of Baron Munchausen_
+.
+A character had fallen part way down a manhole, and pulled himself out by grabbing his bootstraps and lifting.
+In the early days of computing, the term [term]_bootstrap_
+ was applied to the mechanism used to load the operating system.
+It has since become shortened to "`booting`"
+.
+
+(((BIOS)))
+
+(((Basic Input/Output
+	System)))
+
+
+On x86 hardware, the Basic Input/Output System ([acronym]``BIOS``) is responsible for loading the operating system.
+The [acronym]``BIOS`` looks on the hard disk for the Master Boot Record ([acronym]``MBR``), which must be located in a specific place on the disk.
+The [acronym]``BIOS`` has enough knowledge to load and run the [acronym]``MBR``, and assumes that the [acronym]``MBR`` can then carry out the rest of the tasks involved in loading the operating system, possibly with the help of the [acronym]``BIOS``.
+
+[NOTE]
+====
+FreeBSD provides for booting from both the older [acronym]``MBR`` standard, and the newer GUID Partition Table ([acronym]``GPT``).  [acronym]``GPT``	partitioning is often found on computers with the Unified Extensible Firmware Interface ([acronym]``UEFI``). However, FreeBSD can boot from [acronym]``GPT`` partitions even on machines with only a legacy [acronym]``BIOS``	with  {{< manpage "gptboot" "8" >}}
+.
+Work is under way to provide direct [acronym]``UEFI`` booting.
+====
+
+(((Master Boot Record
+	(MBR))))
+
+(((Boot Manager)))
+
+(((Boot Loader)))
+
+
+The code within the [acronym]``MBR`` is typically referred to as a __boot manager__, especially when it interacts with the user.
+The boot manager usually has more code in the first track of the disk or within the file system.
+Examples of boot managers include the standard FreeBSD boot manager [app]``boot0``, also called [app]``Boot Easy``, and [app]``Grub``, which is used by many Linux(TM)
+ distributions.
+
+If only one operating system is installed, the [acronym]``MBR`` searches for the first bootable (active) slice on the disk, and then runs the code on that slice to load the remainder of the operating system.
+When multiple operating systems are present, a different boot manager can be installed to display a list of operating systems so the user can select one to boot.
+
+The remainder of the FreeBSD bootstrap system is divided into three stages.
+The first stage knows just enough to get the computer into a specific state and run the second stage.
+The second stage can do a little bit more, before running the third stage.
+The third stage finishes the task of loading the operating system.
+The work is split into three stages because the [acronym]``MBR`` puts limits on the size of the programs that can be run at stages one and two.
+Chaining the tasks together allows FreeBSD to provide a more flexible loader.
+
+(((kernel)))
+
+(((init8)))
+
+
+The kernel is then started and begins to probe for devices and initialize them for use.
+Once the kernel boot process is finished, the kernel passes control to the user process  {{< manpage "init" "8" >}}
+, which makes sure the disks are in a usable state, starts the user-level resource configuration which mounts file systems, sets up network cards to communicate on the network, and starts the processes which have been configured to run at startup.
+
+This section describes these stages in more detail and demonstrates how to interact with the FreeBSD boot process.
+
+[[_boot_boot0]]
+=== The Boot Manager
+
+(((Boot Manager)))
+
+(((Master Boot Record
+	(MBR))))
+
+
+The boot manager code in the [acronym]``MBR`` is sometimes referred to as _stage zero_ of the boot process.
+By default, FreeBSD uses the [app]``boot0`` boot manager.
+
+The [acronym]``MBR`` installed by the FreeBSD installer is based on [path]``/boot/boot0``
+.
+The size and capability of [app]``boot0`` is restricted to 446 bytes due to the slice table and `0x55AA` identifier at the end of the [acronym]``MBR``.
+If [app]``boot0``	and multiple operating systems are installed, a message similar to this example will be displayed at boot time:
+
+[[_boot_boot0_example]]
+.[path]``boot0``Screenshot
+====
+----
+F1 Win
+F2 FreeBSD
+
+Default: F2
+----
+====
+
+
+Other operating systems will overwrite an existing [acronym]``MBR`` if they are installed after FreeBSD.
+If this happens, or to replace the existing [acronym]``MBR`` with the FreeBSD [acronym]``MBR``, use the following command:
+
+----
+# fdisk -B -b /boot/boot0 device
+----
+
+
+where [replaceable]``device`` is the boot disk, such as [path]``ad0``
+ for the first [acronym]``IDE`` disk, [path]``ad2``
+ for the first [acronym]``IDE`` disk on a second [acronym]``IDE`` controller, or [path]``da0``
+	for the first [acronym]``SCSI`` disk.
+To create a custom configuration of the [acronym]``MBR``, refer to  {{< manpage "boot0cfg" "8" >}}
+.
+
+[[_boot_boot1]]
+=== Stage One and Stage Two
+
+
+Conceptually, the first and second stages are part of the same program on the same area of the disk.
+Because of space constraints, they have been split into two, but are always installed together.
+They are copied from the combined [path]``/boot/boot``
+ by the FreeBSD installer or [command]``bsdlabel``.
+
+These two stages are located outside file systems, in the first track of the boot slice, starting with the first sector.
+This is where [app]``boot0``, or any other boot manager, expects to find a program to run which will continue the boot process.
+
+The first stage, [path]``boot1``
+, is very simple, since it can only be 512 bytes in size.
+It knows just enough about the FreeBSD [term]_bsdlabel_
+, which stores information about the slice, to find and execute [path]``boot2``
+.
+
+Stage two, [path]``boot2``
+, is slightly more sophisticated, and understands the FreeBSD file system enough to find files.
+It can provide a simple interface to choose the kernel or loader to run.
+It runs [app]``loader``, which is much more sophisticated and provides a boot configuration file.
+If the boot process is interrupted at stage two, the following interactive screen is displayed:
+
+[[_boot_boot2_example]]
+.[path]``boot2``Screenshot
+====
+----
+>> FreeBSD/i386 BOOT
+Default: 0:ad(0,a)/boot/loader
+boot:
+----
+====
+
+
+To replace the installed [path]``boot1``
+ and [path]``boot2``
+, use [command]``bsdlabel``, where [replaceable]``diskslice`` is the disk and slice to boot from, such as [path]``ad0s1``
+ for the first slice on the first [acronym]``IDE`` disk:
+
+----
+# bsdlabel -B diskslice
+----
+
+[WARNING]
+====
+If just the disk name is used, such as [path]``ad0``
+, [command]``bsdlabel`` will create the disk in "`dangerously dedicated
+	    mode`"
+, without slices.
+This is probably not the desired action, so double check the [replaceable]``diskslice`` before pressing kbd:[Return]
+.
+====
+
+[[_boot_loader]]
+=== Stage Three
+
+(((boot-loader)))
+
+
+The [app]``loader`` is the final stage of the three-stage bootstrap process.
+It is located on the file system, usually as [path]``/boot/loader``
+.
+
+The [app]``loader`` is intended as an interactive method for configuration, using a built-in command set, backed up by a more powerful interpreter which has a more complex command set.
+
+During initialization, [app]``loader``	will probe for a console and for disks, and figure out which disk it is booting from.
+It will set variables accordingly, and an interpreter is started where user commands can be passed from a script or interactively.
+
+(((loader)))
+
+(((loader configuration)))
+
+
+The [app]``loader`` will then read [path]``/boot/loader.rc``
+, which by default reads in [path]``/boot/defaults/loader.conf``
+ which sets reasonable defaults for variables and reads [path]``/boot/loader.conf``
+ for local changes to those variables. [path]``loader.rc``
+ then acts on these variables, loading whichever modules and kernel are selected.
+
+Finally, by default, [app]``loader``	issues a 10 second wait for key presses, and boots the kernel if it is not interrupted.
+If interrupted, the user is presented with a prompt which understands the command set, where the user may adjust variables, unload all modules, load modules, and then finally boot or reboot.
+ <<_boot_loader_commands>> lists the most commonly used [app]``loader`` commands.
+For a complete discussion of all available commands, refer to  {{< manpage "loader" "8" >}}
+.
+[[_boot_loader_commands]]
+.Loader Built-In Commands
+[cols="1,1", frame="none", options="header"]
+|===
+| Variable
+| Description
+
+|autoboot
+		[replaceable]``seconds``
+|Proceeds to boot the kernel if not interrupted
+		within the time span given, in seconds.  It displays a
+		countdown, and the default time span is 10
+		seconds.
+
+|boot
+		`[replaceable]``-options`````[replaceable]``kernelname````
+|Immediately proceeds to boot the kernel, with
+		any specified options or kernel name.  Providing a
+		kernel name on the command-line is only applicable
+		after an [command]``unload`` has been issued.
+		Otherwise, the previously-loaded kernel will be
+		used.  If _kernelname_ is not
+		qualified, it will be searched under
+		_/boot/kernel_ and
+		__/boot/modules__.
+
+|boot-conf
+|Goes through the same automatic configuration of
+		modules based on specified variables, most commonly
+		[var]``kernel``.  This only makes sense if
+		[command]``unload`` is used first, before
+		changing some variables.
+
+|help
+		`[replaceable]``topic```
+|Shows help messages read from
+		[path]``/boot/loader.help``
+.  If the topic
+		given is ``index``, the list of
+		available topics is displayed.
+
+|include [replaceable]``filename``
+		...
+|Reads the specified file and interprets it line
+		by line.  An error immediately stops the
+		[command]``include``.
+
+|load `-t
+		  [replaceable]``type```[replaceable]``filename``
+|Loads the kernel, kernel module, or file of the
+		type given, with the specified filename.  Any
+		arguments after [replaceable]``filename``
+		are passed to the file.  If
+		_filename_ is not qualified, it
+		will be searched under
+		_/boot/kernel_
+		and __/boot/modules__.
+
+|ls `-l```[replaceable]``path````
+|Displays a listing of files in the given path, or
+		the root directory, if the path is not specified.  If
+		[option]``-l`` is specified, file sizes will
+		also be shown.
+
+|lsdev `-v`
+|Lists all of the devices from which it may be
+		possible to load modules.  If [option]``-v`` is
+		specified, more details are printed.
+
+|lsmod `-v`
+|Displays loaded modules.  If [option]``-v``
+		is specified, more details are shown.
+
+|more [replaceable]``filename``
+|Displays the files specified, with a pause at
+		each [var]``LINES`` displayed.
+
+|reboot
+|Immediately reboots the system.
+
+|set [replaceable]``variable``, set
+		[replaceable]``variable``=[replaceable]``value``
+|Sets the specified environment variables.
+
+|unload
+|Removes all loaded modules.
+|===
+
+
+Here are some practical examples of loader usage.
+To boot the usual kernel in single-user mode 
+
+(((single-user
+	  mode)))
+:
+
+----
+boot -s
+----
+
+
+To unload the usual kernel and modules and then load the previous or another, specified kernel:
+
+----
+unloadload kernel.old
+----
+
+
+Use [path]``kernel.GENERIC``
+ to refer to the default kernel that comes with an installation, or [path]``kernel.old``
+, to refer to the previously installed kernel before a system upgrade or before configuring a custom kernel.
+
+Use the following to load the usual modules with another kernel:
+
+----
+unloadset kernel="kernel.old"boot-conf
+----
+
+
+To load an automated kernel configuration script:
+
+----
+load -t userconfig_script /boot/kernel.conf
+----
+
+(((kernel,boot interaction)))
+
+[[_boot_init]]
+=== Last Stage
+
+
+Once the kernel is loaded by either [app]``loader`` or by [app]``boot2``, which bypasses [app]``loader``, it examines any boot flags and adjusts its behavior as necessary.
+ <<_boot_kernel>> lists the commonly used boot flags.
+Refer to  {{< manpage "boot" "8" >}}
+ for more information on the other boot flags.
+
+(((kernel,bootflags)))
+
+[[_boot_kernel]]
+.Kernel Interaction During Boot
+[cols="1,1", frame="none", options="header"]
+|===
+| Option
+| Description
+
+|[option]``-a``
+|During kernel initialization, ask for the device
+		to mount as the root file system.
+
+|[option]``-C``
+|Boot the root file system from a
+		[acronym]``CDROM``.
+
+|[option]``-s``
+|Boot into single-user mode.
+
+|[option]``-v``
+|Be more verbose during kernel startup.
+|===
+
+
+Once the kernel has finished booting, it passes control to the user process  {{< manpage "init" "8" >}}
+, which is located at [path]``/sbin/init``
+, or the program path specified in the [var]``init_path`` variable in [command]``loader``.
+This is the last stage of the boot process.
+
+The boot sequence makes sure that the file systems available on the system are consistent.
+If a [acronym]``UFS`` file system is not, and [command]``fsck`` cannot fix the inconsistencies, [app]``init`` drops the system into single-user mode so that the system administrator can resolve the problem directly.
+Otherwise, the system boots into multi-user mode.
+
+[[_boot_singleuser]]
+==== Single-User Mode
+
+(((console)))
+
+
+A user can specify this mode by booting with [option]``-s`` or by setting the [var]``boot_single`` variable in [app]``loader``.
+It can also be reached by running [command]``shutdown now`` from multi-user mode.
+Single-user mode begins with this message:
+
+[source]
+----
+Enter full pathname of shell or RETURN for /bin/sh:
+----
+
+
+If the user presses kbd:[Enter]
+, the system will enter the default Bourne shell.
+To specify a different shell, input the full path to the shell.
+
+Single-user mode is usually used to repair a system that will not boot due to an inconsistent file system or an error in a boot configuration file.
+It can also be used to reset the [username]``root``
+ password when it is unknown.
+These actions are possible as the single-user mode prompt gives full, local access to the system and its configuration files.
+There is no networking in this mode.
+
+While single-user mode is useful for repairing a system, it poses a security risk unless the system is in a physically secure location.
+By default, any user who can gain physical access to a system will have full control of that system after booting into single-user mode.
+
+If the system `console` is changed to `insecure` in [path]``/etc/ttys``
+, the system will first prompt for the [username]``root``
+	  password before initiating single-user mode.
+This adds a measure of security while removing the ability to reset the [username]``root``
+ password when it is unknown.
+
+[[_boot_insecure_console]]
+.Configuring an Insecure Console in[path]``/etc/ttys``
+====
+[source]
+----
+# name  getty                           type    status          comments
+#
+# If console is marked "insecure", then init will ask for the root password
+# when going to single-user mode.
+console none                            unknown off insecure
+----
+====
+
+
+An `insecure` console means that physical security to the console is considered to be insecure, so only someone who knows the [username]``root``
+ password may use single-user mode.
+
+[[_boot_multiuser]]
+==== Multi-User Mode
+
+(((multi-user mode)))
+
+
+If [app]``init`` finds the file systems to be in order, or once the user has finished their commands in single-user mode and has typed [command]``exit`` to leave single-user mode, the system enters multi-user mode, in which it starts the resource configuration of the system.
+
+(((rc files)))
+
+
+The resource configuration system reads in configuration defaults from [path]``/etc/defaults/rc.conf``
+ and system-specific details from [path]``/etc/rc.conf``
+.
+It then proceeds to mount the system file systems listed in [path]``/etc/fstab``
+.
+It starts up networking services, miscellaneous system daemons, then the startup scripts of locally installed packages.
+
+To learn more about the resource configuration system, refer to  {{< manpage "rc" "8" >}}
+ and examine the scripts located in [path]``/etc/rc.d``
+.
+
+[[_boot_splash]]
+== Configuring Boot Time Splash Screens
+= Configuring Boot Time Splash Screens
+:imagesdir: ./images
+Joseph J. Barbish
+
+
+Typically when a FreeBSD system boots, it displays its progress as a series of messages at the console.
+A boot splash screen creates an alternate boot screen that hides all of the boot probe and service startup messages.
+A few boot loader messages, including the boot options menu and a timed wait countdown prompt, are displayed at boot time, even when the splash screen is enabled.
+The display of the splash screen can be turned off by hitting any key on the keyboard during the boot process.
+
+There are two basic environments available in FreeBSD.
+The first is the default legacy virtual console command line environment.
+After the system finishes booting, a console login prompt is presented.
+The second environment is a configured graphical environment.
+Refer to <<_x11>> for more information on how to install and configure a graphical display manager and a graphical login manager.
+
+Once the system has booted, the splash screen defaults to being a screen saver.
+After a time period of non-use, the splash screen will display and will cycle through steps of changing intensity of the image, from bright to very dark and over again.
+The configuration of the splash screen saver can be overridden by adding a `saver=` line to [path]``/etc/rc.conf``
+.
+Several built-in screen savers are available and described in  {{< manpage "splash" "4" >}}
+.
+The `saver=` option only applies to virtual consoles and has no effect on graphical display managers.
+
+By installing the [package]#sysutils/bsd-splash-changer#
+ package or port, a random splash image from a collection will display at boot.
+The splash screen function supports 256-colors in the bitmap ([path]``.bmp``
+), ZSoft [acronym]``PCX`` ([path]``.pcx``
+), or TheDraw ([path]``.bin``
+) formats.
+The [path]``.bmp``
+, [path]``.pcx``
+, or [path]``.bin``
+ image has to be placed on the root partition, for example in [path]``/boot``
+.
+The splash image files must have a resolution of 320 by 200 pixels or less in order to work on standard [acronym]``VGA`` adapters.
+For the default boot display resolution of 256-colors and 320 by 200 pixels or less, add the following lines to [path]``/boot/loader.conf``
+.
+Replace [replaceable]``splash.bmp`` with the name of the bitmap file to use:
+
+[source]
+----
+splash_bmp_load="YES"
+bitmap_load="YES"
+bitmap_name="/boot/splash.bmp"
+----
+
+
+To use a [acronym]``PCX`` file instead of a bitmap file:
+
+[source]
+----
+splash_pcx_load="YES"
+bitmap_load="YES"
+bitmap_name="/boot/splash.pcx"
+----
+
+
+To instead use ASCII art in the https://en.wikipedia.org/wiki/TheDraw format:
+
+[source]
+----
+splash_txt="YES"
+bitmap_load="YES"
+bitmap_name="/boot/splash.bin"
+----
+
+
+To use larger images that fill the whole display screen, up to the maximum resolution of 1024 by 768 pixels, the [acronym]``VESA`` module must also be loaded during system boot.
+If using a custom kernel, ensure that the custom kernel configuration file includes the `VESA` kernel configuration option.
+To load the [acronym]``VESA`` module for the splash screen, add this line to [path]``/boot/loader.conf``
+ before the three lines mentioned in the above examples:
+
+[source]
+----
+vesa_load="YES"
+----
+
+
+Other interesting [path]``loader.conf``
+ options include:
+
+`beastie_disable="YES"`::
+This will stop the boot options menu from being displayed, but the timed wait count down prompt will still be present.
+Even with the display of the boot options menu disabled, entering an option selection at the timed wait count down prompt will enact the corresponding boot option.
+
+`loader_logo="beastie"`::
+This will replace the default words "`FreeBSD`"
+, which are displayed to the right of the boot options menu, with the colored beastie logo.
+
+
+For more information, refer to  {{< manpage "splash" "4" >}}
+,  {{< manpage "loader.conf" "5" >}}
+, and  {{< manpage "vga" "4" >}}
+.
+
+== Device Hints
+= Device Hints
+:imagesdir: ./images
+Tom Rhodes
+
+(((device.hints)))
+
+
+During initial system startup, the boot  {{< manpage "loader" "8" >}}
+ reads  {{< manpage "device.hints" "5" >}}
+.
+This file stores kernel boot information known as variables, sometimes referred to as "`device hints`"
+.
+These "`device hints`"
+ are used by device drivers for device configuration.
+
+Device hints may also be specified at the Stage 3 boot loader prompt, as demonstrated in <<_boot_loader>>.
+Variables can be added using [command]``set``, removed with [command]``unset``, and viewed [command]``show``.
+Variables set in [path]``/boot/device.hints``
+ can also be overridden.
+Device hints entered at the boot loader are not permanent and will not be applied on the next reboot.
+
+Once the system is booted,  {{< manpage "kenv" "1" >}}
+ can be used to dump all of the variables.
+
+The syntax for [path]``/boot/device.hints``
+ is one variable per line, using the hash "`#`"
+ as comment markers.
+Lines are constructed as follows:
+
+----
+hint.driver.unit.keyword="value"
+----
+
+
+The syntax for the Stage 3 boot loader is:
+
+----
+set hint.driver.unit.keyword=value
+----
+
+
+where `driver` is the device driver name, `unit` is the device driver unit number, and `keyword` is the hint keyword.
+The keyword may consist of the following options:
+
+* ``at``: specifies the bus which the device is attached to.
+* ``port``: specifies the start address of the [acronym]``I/O`` to be used.
+* ``irq``: specifies the interrupt request number to be used.
+* ``drq``: specifies the DMA channel number.
+* ``maddr``: specifies the physical memory address occupied by the device.
+* ``flags``: sets various flag bits for the device.
+* ``disabled``: if set to `1` the device is disabled.
+
+
+Since device drivers may accept or require more hints not listed here, viewing a driver's manual page is recommended.
+For more information, refer to  {{< manpage "device.hints" "5" >}}
+,  {{< manpage "kenv" "1" >}}
+,  {{< manpage "loader.conf" "5" >}}
+, and  {{< manpage "loader" "8" >}}
+.
+
+[[_boot_shutdown]]
+== Shutdown Sequence
+
+(((shutdown8)))
+
+
+Upon controlled shutdown using  {{< manpage "shutdown" "8" >}}
+,  {{< manpage "init" "8" >}}
+ will attempt to run the script [path]``/etc/rc.shutdown``
+, and then proceed to send all processes the `TERM` signal, and subsequently the `KILL` signal to any that do not terminate in a timely manner.
+
+To power down a FreeBSD machine on architectures and systems that support power management, use  [command]``shutdown -p now`` to turn the power off immediately.
+To reboot a FreeBSD system, use [command]``shutdown -r now``.
+One must be [username]``root``
+ or a member of [groupname]``operator``
+ in order to run  {{< manpage "shutdown" "8" >}}
+.
+One can also use  {{< manpage "halt" "8" >}}
+ and  {{< manpage "reboot" "8" >}}
+.
+Refer to their manual pages and to  {{< manpage "shutdown" "8" >}}
+ for more information.
+
+Modify group membership by referring to <<_users_synopsis>>.
+
+[NOTE]
+====
+Power management requires  {{< manpage "acpi" "4" >}}
+ to be loaded as a module or statically compiled into a custom kernel.
+====
+
+ifdef::backend-docbook[]
+[index]
+== Index
+// Generated automatically by the DocBook toolchain.
+endif::backend-docbook[]

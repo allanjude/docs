@@ -1,0 +1,1237 @@
+---
+title: "Updating and Upgrading FreeBSD"
+---
+[[_updating_upgrading]]
+= Updating and Upgrading FreeBSD
+:doctype: book
+:sectnums:
+:toc: left
+:icons: font
+:experimental:
+:sourcedir: .
+:imagesdir: ./images
+Jim Mock; Jordan Hubbard; Poul-Henning Kamp; John Polstra; Nik Clayton
+
+[[_updating_upgrading_synopsis]]
+== Synopsis
+
+
+FreeBSD is under constant development between releases.
+Some people prefer to use the officially released versions, while others prefer to keep in sync with the latest developments.
+However, even official releases are often updated with security and other critical fixes.
+Regardless of the version used, FreeBSD provides all the necessary tools to keep the system updated, and allows for easy upgrades between versions.
+This chapter describes how to track the development system and the basic tools for keeping a FreeBSD system up-to-date.
+
+After reading this chapter, you will know:
+
+* How to keep a FreeBSD system up-to-date with [app]``freebsd-update`` or [app]``Subversion``.
+* How to compare the state of an installed system against a known pristine copy.
+* How to keep the installed documentation up-to-date with [app]``Subversion`` or documentation ports.
+* The difference between the two development branches: FreeBSD-STABLE and FreeBSD-CURRENT.
+* How to rebuild and reinstall the entire base system.
+
+
+Before reading this chapter, you should:
+
+* Properly set up the network connection (<<_advanced_networking>>).
+* Know how to install additional third-party software (<<_ports>>).
+
+
+[NOTE]
+====
+Throughout this chapter, [command]``svnlite`` is used to obtain and update FreeBSD sources.
+Optionally, the [package]#devel/subversion#
+ port or package may be used.
+====
+
+[[_updating_upgrading_freebsdupdate]]
+== FreeBSD Update
+= FreeBSD Update
+:imagesdir: ./images
+Tom Rhodes; Colin Percival
+
+(((Updating and Upgrading)))
+
+(((freebsd-update)))
+
+
+Applying security patches in a timely manner and upgrading to a newer release of an operating system are important aspects of ongoing system administration.
+FreeBSD includes a utility called [command]``freebsd-update`` which can be used to perform both these tasks.
+
+This utility supports binary security and errata updates to FreeBSD, without the need to manually compile and install the patch or a  new kernel.
+Binary updates are available for all architectures and releases currently supported by the security team.
+The list of supported releases and their estimated end-of-life dates are listed at https://www.FreeBSD.org/security/.
+
+This utility also supports operating system upgrades to minor point releases as well as upgrades to another release branch.
+Before upgrading to a new release, review its release announcement as it contains important information pertinent to the release.
+Release announcements are available from https://www.FreeBSD.org/releases/.
+
+[NOTE]
+====
+If a [command]``crontab`` utilizing the features of  {{< manpage "freebsd-update" "8" >}}
+ exists, it must be disabled before upgrading the operating system.
+====
+
+
+This section describes the configuration file used by [command]``freebsd-update``, demonstrates how to apply a security patch and how to upgrade to a minor or major operating system release, and discusses some of the considerations when upgrading the operating system.
+
+[[_freebsdupdate_config_file]]
+=== The Configuration File
+
+
+The default configuration file for [command]``freebsd-update`` works as-is.
+Some users may wish to tweak the default configuration in [path]``/etc/freebsd-update.conf``
+, allowing better control of the process.
+The comments in this file explain the available options, but the following may require a bit more explanation:
+
+[source]
+----
+# Components of the base system which should be kept updated.
+Components world kernel
+----
+
+
+This parameter controls which parts of FreeBSD will be kept up-to-date.
+The default is to update the entire base system and the kernel.
+Individual components can instead be specified, such as `src/base` or ``src/sys``.
+However, the best option is to leave this at the default as changing it to include specific items requires every needed item to be listed.
+Over time, this could have disastrous consequences as source code and binaries may become out of sync.
+
+[source]
+----
+# Paths which start with anything matching an entry in an IgnorePaths
+# statement will be ignored.
+IgnorePaths /boot/kernel/linker.hints
+----
+
+
+To leave specified directories, such as [path]``/bin``
+ or [path]``/sbin``
+, untouched during the update process, add their paths to this statement.
+This option may be used to prevent [command]``freebsd-update`` from overwriting local modifications.
+
+[source]
+----
+# Paths which start with anything matching an entry in an UpdateIfUnmodified
+# statement will only be updated if the contents of the file have not been
+# modified by the user (unless changes are merged; see below).
+UpdateIfUnmodified /etc/ /var/ /root/ /.cshrc /.profile
+----
+
+
+This option will only update unmodified configuration files in the specified directories.
+Any changes made by the user will prevent the automatic updating of these files.
+There is another option, ``KeepModifiedMetadata``, which will instruct [command]``freebsd-update`` to save the changes during the merge.
+
+[source]
+----
+# When upgrading to a new FreeBSD release, files which match MergeChanges
+# will have any local changes merged into the version from the new release.
+MergeChanges /etc/ /var/named/etc/ /boot/device.hints
+----
+
+
+List of directories with configuration files that [command]``freebsd-update`` should attempt to merge.
+The file merge process is a series of  {{< manpage "diff" "1" >}}
+ patches similar to  {{< manpage "mergemaster" "8" >}}
+, but with fewer options.
+Merges are either accepted, open an editor, or cause [command]``freebsd-update`` to abort.
+When in doubt, backup [path]``/etc``
+ and just accept the merges.
+See  {{< manpage "mergemaster" "8" >}}
+ for more information about [command]``mergemaster``.
+
+[source]
+----
+# Directory in which to store downloaded updates and temporary
+# files used by FreeBSD Update.
+# WorkDir /var/db/freebsd-update
+----
+
+
+This directory is where all patches and temporary files are placed.
+In cases where the user is doing a version upgrade, this location should have at least a gigabyte of disk space available.
+
+[source]
+----
+# When upgrading between releases, should the list of Components be
+# read strictly (StrictComponents yes) or merely as a list of components
+# which *might* be installed of which FreeBSD Update should figure out
+# which actually are installed and upgrade those (StrictComponents no)?
+# StrictComponents no
+----
+
+
+When this option is set to ``yes``, [command]``freebsd-update`` will assume that the `Components` list is complete and will not attempt to make changes outside of the list.
+Effectively, [command]``freebsd-update`` will attempt to update every file which belongs to the `Components`	list.
+
+[[_freebsdupdate_security_patches]]
+=== Applying Security Patches
+
+
+The process of applying FreeBSD security patches has been simplified, allowing an administrator to keep a system fully patched using [command]``freebsd-update``.
+More information about FreeBSD security advisories can be found in <<_security_advisories>>.
+
+FreeBSD security patches may be downloaded and installed using the following commands.
+The first command will determine if any outstanding patches are available, and if so, will list the files that will be modifed if the patches are applied.
+The second command will apply the patches.
+
+----
+# freebsd-update fetch
+# freebsd-update install
+----
+
+
+If the update applies any kernel patches, the system will need a reboot in order to boot into the patched kernel.
+If the patch was applied to any running binaries, the affected applications should be restarted so that the patched version of the binary is used.
+
+The system can be configured to automatically check for updates once every day by adding this entry to [path]``/etc/crontab``
+:
+
+[source]
+----
+@daily                                  root    freebsd-update cron
+----
+
+
+If patches exist, they will automatically be downloaded but will not be applied.
+The [username]``root``
+ user will be sent an email so that the patches may be reviewed and manually installed with [command]``freebsd-update install``.
+
+If anything goes wrong, [command]``freebsd-update``	has the ability to roll back the last set of changes with the following command:
+
+----
+# freebsd-update rollbackUninstalling updates... done.
+----
+
+
+Again, the system should be restarted if the kernel or any kernel modules were modified and any affected binaries should be restarted.
+
+Only the [path]``GENERIC``
+ kernel can be automatically updated by [command]``freebsd-update``.
+If a custom kernel is installed, it will have to be rebuilt and reinstalled after [command]``freebsd-update``	finishes installing the updates.
+The default kernel name is __GENERIC__.
+The  {{< manpage "uname" "1" >}}
+ command may be used to verify its installation.
+
+[NOTE]
+====
+Always keep a copy of the [path]``GENERIC``
+	  kernel in [path]``/boot/GENERIC``
+.
+It will be helpful in diagnosing a variety of problems and in performing version upgrades.
+Refer to <<_freebsd_update_custom_kernel_9x>> for instructions on how to get a copy of the [path]``GENERIC``
+ kernel.
+====
+
+
+Unless the default configuration in [path]``/etc/freebsd-update.conf``
+ has been changed, [command]``freebsd-update`` will install the updated kernel sources along with the rest of the updates.
+Rebuilding and reinstalling a new custom kernel can then be performed in the usual way.
+
+The updates distributed by [command]``freebsd-update`` do not always involve the kernel.
+It is not necessary to rebuild a custom kernel if the kernel sources have not been modified by [command]``freebsd-update install``.
+However, [command]``freebsd-update`` will always update [path]``/usr/src/sys/conf/newvers.sh``
+.
+The current patch level, as indicated by the `-p`	number reported by [command]``uname -r``, is obtained from this file.
+Rebuilding a custom kernel, even if nothing else changed, allows [command]``uname`` to accurately report the current patch level of the system.
+This is particularly helpful when maintaining multiple systems, as it allows for a quick assessment of the updates installed in each one.
+
+[[_freebsdupdate_upgrade]]
+=== Performing Major and Minor Version Upgrades
+
+
+Upgrades from one minor version of FreeBSD to another, like from FreeBSD{nbsp}9.0 to FreeBSD{nbsp}9.1, are called [term]_minor version_
+ upgrades. [term]_Major version_
+ upgrades occur when FreeBSD is upgraded from one major version to another, like from FreeBSD{nbsp}9.X to FreeBSD{nbsp}10.X.
+Both types of upgrades can be performed by providing [command]``freebsd-update``	with a release version target.
+
+[NOTE]
+====
+If the system is running a custom kernel, make sure that a copy of the [path]``GENERIC``
+ kernel exists in [path]``/boot/GENERIC``
+ before starting the upgrade.
+Refer to <<_freebsd_update_custom_kernel_9x>> for instructions on how to get a copy of the [path]``GENERIC``
+ kernel.
+====
+
+
+The following command, when run on a FreeBSD{nbsp}9.0 system, will upgrade it to FreeBSD{nbsp}9.1:
+
+----
+# freebsd-update -r 9.1-RELEASE upgrade
+----
+
+
+After the command has been received, [command]``freebsd-update`` will evaluate the configuration file and current system in an attempt to gather the information necessary to perform the upgrade.
+A screen listing will display which components have and have not been detected.
+For example:
+
+----
+Looking up update.FreeBSD.org mirrors... 1 mirrors found.
+Fetching metadata signature for 9.0-RELEASE from update1.FreeBSD.org... done.
+Fetching metadata index... done.
+Inspecting system... done.
+
+The following components of FreeBSD seem to be installed:
+kernel/smp src/base src/bin src/contrib src/crypto src/etc src/games
+src/gnu src/include src/krb5 src/lib src/libexec src/release src/rescue
+src/sbin src/secure src/share src/sys src/tools src/ubin src/usbin
+world/base world/info world/lib32 world/manpages
+
+The following components of FreeBSD do not seem to be installed:
+kernel/generic world/catpages world/dict world/doc world/games
+world/proflibs
+
+Does this look reasonable (y/n)?y
+----
+
+
+At this point, [command]``freebsd-update`` will attempt to download all files required for the upgrade.
+In some cases, the user may be prompted with questions regarding what to install or how to proceed.
+
+When using a custom kernel, the above step will produce a warning similar to the following:
+
+----
+WARNING: This system is running a "`MYKERNEL`" kernel, which is not a
+kernel configuration distributed as part of FreeBSD 9.0-RELEASE.
+This kernel will not be updated: you MUST update the kernel manually
+before running "/usr/sbin/freebsd-update install"
+----
+
+
+This warning may be safely ignored at this point.
+The updated [path]``GENERIC``
+ kernel will be used as an intermediate step in the upgrade process.
+
+Once all the patches have been downloaded to the local system, they will be applied.
+This process may take a while, depending on the speed and workload of the machine.
+Configuration files will then be merged.
+The merging process requires some user intervention as a file may be merged or an editor may appear on screen for a manual merge.
+The results of every successful merge will be shown to the user as the process continues.
+A failed or ignored merge will cause the process to abort.
+Users may wish to make a backup of [path]``/etc``
+ and manually merge important files, such as [path]``master.passwd``
+ or [path]``group``
+ at a later time.
+
+[NOTE]
+====
+The system is not being altered yet as all patching and merging is happening in another directory.
+Once all patches have been applied successfully, all configuration files have been merged and it seems the process will go smoothly, the changes can be committed to disk by the user using the following command:
+
+----
+# freebsd-update install
+----
+====
+
+
+The kernel and kernel modules will be patched first.
+If the system is running with a custom kernel, use  {{< manpage "nextboot" "8" >}}
+ to set the kernel for the next boot to the updated [path]``/boot/GENERIC``
+:
+
+----
+# nextboot -k GENERIC
+----
+
+[WARNING]
+====
+Before rebooting with the [path]``GENERIC``
+	  kernel, make sure it contains all the drivers required for the system to boot properly and connect to the network, if the machine being updated is accessed remotely.
+In particular, if the running custom kernel contains built-in functionality usually provided by kernel modules, make sure to temporarily load these modules into the [path]``GENERIC``
+ kernel using the [path]``/boot/loader.conf``
+ facility.
+It is recommended to disable non-essential services as well as any disk and network mounts until the upgrade process is complete.
+====
+
+
+The machine should now be restarted with the updated kernel:
+
+----
+# shutdown -r now
+----
+
+
+Once the system has come back online, restart [command]``freebsd-update`` using the following command.
+Since the state of the process has been saved, [command]``freebsd-update`` will not start from the beginning, but will instead move on to the next phase and remove all old shared libraries and object files.
+
+----
+# freebsd-update install
+----
+
+[NOTE]
+====
+Depending upon whether any library version numbers were bumped, there may only be two install phases instead of three.
+====
+
+
+The upgrade is now complete.
+If this was a major version upgrade, reinstall all ports and packages as described in <<_freebsdupdate_portsrebuild>>.
+
+[[_freebsd_update_custom_kernel_9x]]
+==== Custom Kernels with FreeBSD{nbsp}9.X and Later
+
+
+Before using [command]``freebsd-update``, ensure that a copy of the [path]``GENERIC``
+ kernel exists in [path]``/boot/GENERIC``
+.
+If a custom kernel has only been built once, the kernel in [path]``/boot/kernel.old``
+ is the `GENERIC` kernel.
+Simply rename this directory to [path]``/boot/kernel``
+.
+
+If a custom kernel has been built more than once or if it is unknown how many times the custom kernel has been built, obtain a copy of the `GENERIC`	  kernel that matches the current version of the operating system.
+If physical access to the system is available, a copy of the `GENERIC` kernel can be installed from the installation media:
+
+----
+# mount /cdrom
+# cd /cdrom/usr/freebsd-dist
+# tar -C/ -xvf kernel.txz boot/kernel/kernel
+----
+
+
+Alternately, the `GENERIC` kernel may be rebuilt and installed from source:
+
+----
+# cd /usr/src
+# make kernel __MAKE_CONF=/dev/null SRCCONF=/dev/null
+----
+
+
+For this kernel to be identified as the `GENERIC` kernel by [command]``freebsd-update``, the [path]``GENERIC``
+ configuration file must not have been modified in any way.
+It is also suggested that the kernel is built without any other special options.
+
+Rebooting into the [path]``GENERIC``
+ kernel is not required as [command]``freebsd-update`` only needs [path]``/boot/GENERIC``
+ to exist.
+
+[[_freebsdupdate_portsrebuild]]
+==== Upgrading Packages After a Major Version Upgrade
+
+
+Generally, installed applications will continue to work without problems after minor version upgrades.
+Major versions use different Application Binary Interfaces ([acronym]``ABI``s), which will break most third-party applications.
+After a major version upgrade, all installed packages and ports need to be upgraded.
+Packages can be upgraded using [command]``pkg
+	    upgrade``.
+To upgrade installed ports, use a utility such as [package]#ports-mgmt/portmaster#
+.
+
+A forced upgrade of all installed packages will replace the packages with fresh versions from the repository even if the version number has not increased.
+This is required because of the ABI version change when upgrading between major versions of FreeBSD.
+The forced upgrade can be accomplished by performing:
+
+----
+# pkg-static upgrade -f
+----
+
+
+A rebuild of all installed applications can be accomplished with this command:
+
+----
+# portmaster -af
+----
+
+
+This command will display the configuration screens for each application that has configurable options and wait for the user to interact with those screens.
+To prevent this behavior, and use only the default options, include [option]``-G`` in the above command.
+
+Once the software upgrades are complete, finish the upgrade process with a final call to [command]``freebsd-update`` in order to tie up all the loose ends in the upgrade process:
+
+----
+# freebsd-update install
+----
+
+
+If the [path]``GENERIC``
+ kernel was temporarily used, this is the time to build and install a new custom kernel using the instructions in <<_kernelconfig>>.
+
+Reboot the machine into the new FreeBSD version.
+The upgrade process is now complete.
+
+[[_freebsdupdate_system_comparison]]
+=== System State Comparison
+
+
+The state of the installed FreeBSD version against a known good copy can be tested using [command]``freebsd-update IDS``.
+This command evaluates the current version of system utilities, libraries, and configuration files and can be used as a built-in Intrusion Detection System ([acronym]``IDS``).
+
+[WARNING]
+====
+This command is not a replacement for a real [acronym]``IDS`` such as [package]#security/snort#
+.
+As [command]``freebsd-update`` stores data on disk, the possibility of tampering is evident.
+While this possibility may be reduced using [var]``kern.securelevel`` and by storing the [command]``freebsd-update`` data on a read-only file system when not in use, a better solution would be to compare the system against a secure disk, such as a [acronym]``DVD`` or securely stored external [acronym]``USB`` disk device.
+An alternative method for providing [acronym]``IDS`` functionality using a built-in utility is described in <<_security_ids>>
+====
+
+
+To begin the comparison, specify the output file to save the results to:
+
+----
+# freebsd-update IDS >> outfile.ids
+----
+
+
+The system will now be inspected and a lengthy listing of files, along with the [acronym]``SHA256`` hash values for both the known value in the release and the current installation, will be sent to the specified output file.
+
+The entries in the listing are extremely long, but the output format may be easily parsed.
+For instance, to obtain a list of all files which differ from those in the release, issue the following command:
+
+----
+# cat outfile.ids | awk '{ print $1 }' | more/etc/master.passwd
+/etc/motd
+/etc/passwd
+/etc/pf.conf
+----
+
+
+This sample output has been truncated as many more files exist.
+Some files have natural modifications.
+For example, [path]``/etc/passwd``
+ will be modified if users have been added to the system.
+Kernel modules may differ as [command]``freebsd-update`` may have updated them.
+To exclude specific files or directories, add them to the `IDSIgnorePaths` option in [path]``/etc/freebsd-update.conf``
+.
+
+[[_updating_upgrading_documentation]]
+== Updating the Documentation Set
+
+(((Updating and Upgrading)))
+
+(((Documentation)))
+
+
+Documentation is an integral part of the FreeBSD operating system.
+While an up-to-date version of the FreeBSD documentation is always available on the FreeBSD web site (link:@@URL_RELPREFIX@@/doc/[https://www.freebsd.org/doc/]), it can be handy to have an up-to-date, local copy of the FreeBSD website, handbooks, [acronym]``FAQ``, and articles.
+
+This section describes how to use either source or the FreeBSD Ports Collection to keep a local copy of the FreeBSD documentation up-to-date.
+
+For information on editing and submitting corrections to the documentation, refer to the FreeBSD Documentation Project Primer for New Contributors (link:/doc/en_US.ISO8859-1/en_US.ISO8859-1/books/fdp-primer[https://www.freebsd.org/doc/en_US.ISO8859-1/books/fdp-primer/]).
+
+[[_updating_installed_documentation]]
+=== Updating Documentation from Source
+
+
+Rebuilding the FreeBSD documentation from source requires a collection of tools which are not part of the FreeBSD base system.
+The required tools can be installed from the [package]#textproc/docproj#
+ package or port developed by the FreeBSD Documentation Project.
+
+Once installed, use [app]``svnlite`` to fetch a clean copy of the documentation source:
+
+----
+# svnlite checkout https://svn.FreeBSD.org/doc/head /usr/doc
+----
+
+
+The initial download of the documentation sources may take a while.
+Let it run until it completes.
+
+Future updates of the documentation sources may be fetched by running:
+
+----
+# svnlite update /usr/doc
+----
+
+
+Once an up-to-date snapshot of the documentation sources has been fetched to [path]``/usr/doc``
+, everything is ready for an update of the installed documentation.
+
+A full update of all available languages may be performed by typing:
+
+----
+# cd /usr/doc
+# make install clean
+----
+
+
+If an update of only a specific language is desired, [command]``make`` can be invoked in a language-specific subdirectory of [path]``/usr/doc``
+:
+
+----
+# cd /usr/doc/en_US.ISO8859-1
+# make install clean
+----
+
+
+An alternative way of updating the documentation is to run this command from [path]``/usr/doc``
+ or the desired language-specific subdirectory:
+
+----
+# make update
+----
+
+
+The output formats that will be installed may be specified by setting [var]``FORMATS``:
+
+----
+# cd /usr/doc
+# make FORMATS='html html-split' install clean
+----
+
+
+Several options are available to ease the process of updating only parts of the documentation, or the build of specific translations.
+These options can be set either as system-wide options in [path]``/etc/make.conf``
+, or as command-line options passed to [command]``make``.
+
+The options include:
+
+[var]``DOC_LANG``::
+The list of languages and encodings to build and install, such as `en_US.ISO8859-1` for English documentation.
+
+[var]``FORMATS``::
+A single format or a list of output formats to be built.
+Currently, ``html``, ``html-split``, ``txt``, ``ps``, and `pdf` are supported.
+
+[var]``DOCDIR``::
+Where to install the documentation.
+It defaults to [path]``/usr/share/doc``
+.
+
+
+For more [command]``make`` variables supported as system-wide options in FreeBSD, refer to  {{< manpage "make.conf" "5" >}}
+.
+
+[[_doc_ports_install_package]]
+=== Updating Documentation from Ports
+= Updating Documentation from Ports
+:imagesdir: ./images
+Marc Fonvieille
+
+(((Updating and Upgrading)))
+
+(((documentation package)))
+
+
+The previous section presented a method for updating the FreeBSD documentation from sources.
+This section describes an alternative method which uses the Ports Collection and makes it possible to:
+
+* Install pre-built packages of the documentation, without having to locally build anything or install the documentation toolchain.
+* Build the documentation sources through the ports framework, making the checkout and build steps a bit easier.
+
+
+This method of updating the FreeBSD documentation is supported by a set of documentation ports and packages which are updated by the {a.doceng}
+on a monthly basis.
+These are listed in the FreeBSD Ports{nbsp}Collection, under the docs category (http://www.freshports.org/docs/).
+
+Organization of the documentation ports is as follows:
+
+* The [package]#misc/freebsd-doc-en# package or port installs all of the English documentation.
+* The [package]#misc/freebsd-doc-all# meta-package or port installs all documentation in all available languages.
+* There is a package and port for each translation, such as [package]#misc/freebsd-doc-hu# for the Hungarian documentation.
+
+
+When binary packages are used, the FreeBSD documentation will be installed in all available formats for the given language.
+For example, the following command will install the latest package of the Hungarian documentation:
+
+----
+# pkg install hu-freebsd-doc
+----
+
+[NOTE]
+====
+Packages use a format that differs from the corresponding port's name: ``[replaceable]``lang``-freebsd-doc``, where [replaceable]``lang`` is the short format of the language code, such as `hu` for Hungarian, or `zh_cn` for Simplified Chinese.
+====
+
+
+To specify the format of the documentation, build the port instead of installing the package.
+For example, to build and install the English documentation:
+
+----
+# cd /usr/ports/misc/freebsd-doc-en
+# make install clean
+----
+
+
+The port provides a configuration menu where the format to build and install can be specified.
+By default, split [acronym]``HTML``, similar to the format used on http://www.FreeBSD.org, and [acronym]``PDF`` are selected.
+
+Alternately, several [command]``make`` options can be specified when building a documentation port, including:
+
+[var]``WITH_HTML``::
+Builds the HTML format with a single HTML file per document.
+The formatted documentation is saved to a file called [path]``article.html``
+, or [path]``book.html``
+.
+
+[var]``WITH_PDF``::
+The formatted documentation is saved to a file called [path]``article.pdf``
+or [path]``book.pdf``
+.
+
+[var]``DOCBASE``::
+Specifies where to install the documentation.
+It defaults to [path]``/usr/local/share/doc/freebsd``
+.
+
+
+This example uses variables to install the Hungarian documentation as a [acronym]``PDF`` in the specified directory:
+
+----
+# cd /usr/ports/misc/freebsd-doc-hu
+# make -DWITH_PDF DOCBASE=share/doc/freebsd/hu install clean
+----
+
+
+Documentation packages or ports can be updated using the instructions in <<_ports>>.
+For example, the following command updates the installed Hungarian documentation using [package]#ports-mgmt/portmaster#
+	by using packages only:
+
+----
+# portmaster -PP hu-freebsd-doc
+----
+
+[[_current_stable]]
+== Tracking a Development Branch
+
+(((-CURRENT)))
+
+(((-STABLE)))
+
+
+FreeBSD has two development branches: FreeBSD-CURRENT and FreeBSD-STABLE.
+
+This section provides an explanation of each branch and its intended audience, as well as how to keep a system up-to-date with each respective branch.
+
+[[_current]]
+=== Using FreeBSD-CURRENT
+
+
+FreeBSD-CURRENT is the "`bleeding edge`"
+ of FreeBSD development and  FreeBSD-CURRENT users are expected to have a high degree of technical skill.
+Less technical users who wish to track a development branch should track FreeBSD-STABLE instead.
+
+FreeBSD-CURRENT is the very latest source code for FreeBSD and includes works in progress, experimental changes, and transitional mechanisms that might or might not be present in the next official release.
+While many FreeBSD developers compile the FreeBSD-CURRENT source code daily, there are short periods of time when the source may not be buildable.
+These problems are resolved as quickly as possible, but whether or not FreeBSD-CURRENT brings disaster or new functionality can be a matter of when the source code was synced.
+
+FreeBSD-CURRENT is made available for three primary interest groups:
+
+. Members of the FreeBSD community who are actively working on some part of the source tree.
+. Members of the FreeBSD community who are active testers. They are willing to spend time solving problems, making topical suggestions on changes and the general direction of FreeBSD, and submitting patches.
+. Users who wish to keep an eye on things, use the current source for reference purposes, or make the occasional comment or code contribution.
+
+
+FreeBSD-CURRENT should _not_ be considered a fast-track to getting new features before the next release as pre-release features are not yet fully tested and most likely contain bugs.
+It is not a quick way of getting bug fixes as any given commit is just as likely to introduce new bugs as to fix existing ones.
+FreeBSD-CURRENT is not in any way "`officially supported`"
+.
+
+(((-CURRENT,using)))
+
+
+To track FreeBSD-CURRENT:
+
+. Join the link:freebsd-current and the link:svn-src-head lists. This is _essential_ in order to see the comments that people are making about the current state of the system and to receive important bulletins about the current state of FreeBSD-CURRENT.
++ 
+The link:svn-src-head list records the commit log entry for each change as it is made, along with any pertinent information on possible side effects.
++ 
+To join these lists, go to http://lists.FreeBSD.org/mailman/listinfo, click on the list to subscribe to, and follow the instructions.
+In order to track changes to the whole source tree, not just the changes to FreeBSD-CURRENT, subscribe to the link:svn-src-all list.
+. Synchronize with the FreeBSD-CURRENT sources. Typically, <<_svn,svnlite>> is used to check out the -CURRENT code from the `head` branch of one of the Subversion mirror sites listed in <<_svn_mirrors>>.
+. Due to the size of the repository, some users choose to only synchronize the sections of source that interest them  or which they are contributing patches to. However, users that plan to compile the operating system from source must download _all_ of FreeBSD-CURRENT, not just selected portions.
++ 
+Before compiling FreeBSD-CURRENT 
+, read [path]``/usr/src/Makefile``
+very carefully and follow the instructions in <<_makeworld>>.
+Read the link:FreeBSD-CURRENT mailing list and [path]``/usr/src/UPDATING``
+to stay up-to-date on other bootstrapping procedures that sometimes become necessary on the road to the next release.
+. Be active! FreeBSD-CURRENT users are encouraged to submit their suggestions for enhancements or bug fixes. Suggestions with accompanying code are always welcome.
+
+
+[[_stable]]
+=== Using FreeBSD-STABLE
+
+
+FreeBSD-STABLE is the development branch from which major releases are made.
+Changes go into this branch at a slower pace and with the general assumption that they have first been tested in FreeBSD-CURRENT.
+This is _still_ a development branch and, at any given time, the sources for FreeBSD-STABLE may or may not be suitable for general use.
+It is simply another engineering development track, not a resource for end-users.
+Users who do not have the resources to perform testing should instead run the most recent release of FreeBSD.
+
+Those interested in tracking or contributing to the FreeBSD development process, especially as it relates to the next release of FreeBSD, should consider following FreeBSD-STABLE.
+
+While the FreeBSD-STABLE branch should compile and run at all times, this cannot be guaranteed.
+Since more people run FreeBSD-STABLE than FreeBSD-CURRENT, it is inevitable that bugs and corner cases will sometimes be found in FreeBSD-STABLE that were not apparent in FreeBSD-CURRENT.
+For this reason, one should not blindly track FreeBSD-STABLE.
+It is particularly important _not_ to update any production servers to FreeBSD-STABLE without thoroughly testing the code in a development or testing environment.
+
+To track FreeBSD-STABLE:
+
+(((-STABLE,using)))
+
+. Join the link:freebsd-stable list in order to stay informed of build dependencies that may appear in FreeBSD-STABLE or any other issues requiring special attention. Developers will also make announcements in this mailing list when they are contemplating some controversial fix or update, giving the users a chance to respond if they have any issues to raise concerning the proposed change.
++ 
+Join the relevant [app]``svn`` list for the branch being tracked.
+For example, users tracking the 9-STABLE branch should join the link:svn-src-stable-9 list.
+This list records the commit log entry for each change as it is made, along with any pertinent information on possible side effects.
++ 
+To join these lists, go to http://lists.FreeBSD.org/mailman/listinfo, click on the list to subscribe to, and follow the instructions.
+In order to track changes for the whole source tree, subscribe to link:svn-src-all.
+. To install a new FreeBSD-STABLE system, install the most recent FreeBSD-STABLE release from the <<_mirrors,FreeBSD mirror sites>> or use a monthly snapshot built from FreeBSD-STABLE. Refer to link:@@URL_RELPREFIX@@/snapshots/[www.freebsd.org/snapshots]	    for more information about snapshots.
++ 
+To compile or upgrade to an existing FreeBSD system to FreeBSD-STABLE, use <<_svn,svn>>
+to check out the source for the desired branch.
+Branch names, such as ``stable/9``, are listed at link:@@URL_RELPREFIX@@/releng/[www.freebsd.org/releng].
+. Before compiling or upgrading to FreeBSD-STABLE 
++
+
+(((-STABLE,compiling)))
+, read [path]``/usr/src/Makefile``
+	    carefully and follow the instructions in <<_makeworld>>.
+Read the link:FreeBSD-STABLE mailing list and [path]``/usr/src/UPDATING``
+ to keep up-to-date on other bootstrapping procedures that sometimes become necessary on the road to the next release.
+
+
+[[_makeworld]]
+== Updating FreeBSD from Source
+
+
+Updating FreeBSD by compiling from source offers several advantages over binary updates.
+Code can be built with options to take advantage of specific hardware.
+Parts of the base system can be built with non-default settings, or left out entirely where they are not needed or desired.
+The build process takes longer to update a system than just installing binary updates, but allows complete customization to produce a tailored version of FreeBSD.
+
+[[_updating_src_quick_start]]
+=== Quick Start
+
+
+This is a quick reference for the typical steps used to update FreeBSD by building from source.
+Later sections describe the process in more detail.
+
+
+. {empty}
++
+
+----
+# svnlite update /usr/src <1> <2>
+# cd /usr/src <3>
+# make -j4 buildworld <4>
+# make -j4 kernel <5>
+# shutdown -r now <6>
+# cd /usr/src <7>
+# make installworld <8>
+# mergemaster -Ui <9>
+# shutdown -r now <10>
+----
++
+<1>Get the latest version of the source.  See
+		<<_updating_src_obtaining_src>>
+ for
+		more information on obtaining and updating
+		source.
+<2>Check [path]``/usr/src/UPDATING``
+
+		for any manual steps required before or after building
+		from source.
+<3>Go to the source directory.
+<4>Compile the world, everything except the
+		kernel.
+<5>Compile and install the kernel.  This is
+		equivalent to [command]``
+make buildkernel
+		  installkernel``
+.
+<6>Reboot the system to the new kernel.
+<7>Go to the source directory.
+<8>Install the world.
+<9>Update and merge configuration files in
+		[path]``/etc/``
+.
+<10>Restart the system to use the newly-built world
+		and kernel.
+
+
+[[_updating_src_preparing]]
+=== Preparing for a Source Update
+
+
+Read [path]``/usr/src/UPDATING``
+.
+Any manual steps that must be performed before or after an update are described in this file.
+
+[[_updating_src_obtaining_src]]
+=== Updating the Source
+
+
+FreeBSD source code is located in [path]``/usr/src/``
+.
+The preferred method of updating this source is through the [app]``Subversion`` version control system.
+Verify that the source code is under version control:
+
+----
+# svnlite info /usr/srcPath: /usr/src
+Working Copy Root Path: /usr/src
+...
+----
+
+
+This indicates that [path]``/usr/src/``
+	is under version control and can be updated with  {{< manpage "svnlite" "1" >}}
+:
+
+----
+# svnlite update /usr/src
+----
+
+
+The update process can take some time if the directory has not been updated recently.
+After it finishes, the source code is up to date and the build process described in the next section can begin.
+
+.Obtaining the Source
+[NOTE]
+====
+If the output says ``'/usr/src' is not a working copy``, the files there are missing or were installed with a different method.
+A new checkout of the source is required.
+[[_updating_src_obtaining_src_repopath]]
+.FreeBSD Versions and Repository Paths
+[cols="1,1,1", options="header"]
+|===
+| uname -r Output
+| Repository Path
+| Description
+
+|``[replaceable]``X.Y``-RELEASE``
+|``base/releng/``[replaceable]``X.Y``
+|The Release version plus only critical security
+		  and bug fix patches.  This branch is recommended
+		  for most users.
+
+|``[replaceable]``X.Y``-STABLE``
+|``base/stable/``[replaceable]``X``
+|
+
+The Release version plus all additional development on that branch. _STABLE_ refers to the Applications Binary Interface ([acronym]``ABI``) not changing, so software compiled for earlier versions still runs.
+For example, software compiled to run on FreeBSD 10.1 will still run on FreeBSD 10-STABLE compiled later.
+
+STABLE branches occasionally have bugs or incompatibilities which might affect users, although these are typically fixed quickly.
+
+|``[replaceable]``X``-CURRENT``
+|``base/head/``
+|The latest unreleased development version of
+		  FreeBSD.  The CURRENT branch can have major bugs or
+		  incompatibilities and is recommended only for
+		  advanced users.
+|===
+
+Determine which version of FreeBSD is being used with  {{< manpage "uname" "1" >}}
+:
+
+----
+# uname -r10.3-RELEASE
+----
+
+Based on <<_updating_src_obtaining_src_repopath>>, the source used to update `10.3-RELEASE` has a repository path of ``base/releng/10.3``.
+That path is used when checking out the source:
+
+----
+# mv /usr/src /usr/src.bak <11>
+# svnlite checkout https://svn.freebsd.org/base/releng/10.3 /usr/src <12>
+----
+<11>Move the old directory out of the way.  If there are
+	      no local modifications in this directory, it can be
+	      deleted.
+<12>The path from
+	      <<_updating_src_obtaining_src_repopath>>
+ is
+	      added to the repository [acronym]``URL``
+.  The
+	      third parameter is the destination directory for the
+	      source code on the local system.
+====
+
+[[_updating_src_building]]
+=== Building from Source
+
+
+The __world__, or all of the operating system except the kernel, is compiled.
+This is done first to provide up-to-date tools to build the kernel.
+Then the kernel itself is built:
+
+----
+# cd /usr/src
+# make buildworld
+# make buildkernel
+----
+
+
+The compiled code is written to [path]``/usr/obj``
+.
+
+These are the basic steps.
+Additional options to control the build are described below.
+
+[[_updating_src_building_clean_build]]
+==== Performing a Clean Build
+
+
+Some versions of the FreeBSD build system leave previously-compiled code in the temporary object directory, [path]``/usr/obj``
+.
+This can speed up later builds by avoiding recompiling code that has not changed.
+To force a clean rebuild of everything, use `cleanworld` before starting a build:
+
+----
+# make cleanworld
+----
+
+[[_updating_src_building_jobs]]
+==== Setting the Number of Jobs
+
+
+Increasing the number of build jobs on multi-core processors can improve build speed.
+Determine the number of cores with [command]``sysctl hw.ncpu``.
+Processors vary, as do the build systems used with different versions of FreeBSD, so testing is the only sure method to tell how a different number of jobs affects the build speed.
+For a starting point, consider values between half and double the number of cores.
+The number of jobs is specified with [option]``-j``.
+
+[[_updating_src_building_jobs_example]]
+.Increasing the Number of Build Jobs
+====
+Building the world and kernel with four jobs:
+
+----
+# make -j4 buildworld buildkernel
+----
+====
+
+[[_updating_src_building_only_kernel]]
+==== Building Only the Kernel
+
+
+A `buildworld` must be completed if the source code has changed.
+After that, a `buildkernel` to build a kernel can be run at any time.
+To build just the kernel:
+
+----
+# cd /usr/src
+# make buildkernel
+----
+
+[[_updating_src_building_custom_kernel]]
+==== Building a Custom Kernel
+
+
+The standard FreeBSD kernel is based on a _kernel config file_ called [path]``GENERIC``
+.
+The [path]``GENERIC``
+ kernel includes the most commonly-needed device drivers and options.
+Sometimes it is useful or necessary to build a custom kernel, adding or removing device drivers or options to fit a specific need.
+
+For example, someone developing a small embedded computer with severely limited [acronym]``RAM`` could remove unneeded device drivers or options to make the kernel slightly smaller.
+
+Kernel config files are located in [path]``/usr/src/sys/arch/conf/``
+, where [replaceable]``arch`` is the output from [command]``uname -m``.
+On most computers, that is ``amd64``, giving a config file directory of [path]``/usr/src/sys/amd64/conf/``
+.
+
+[TIP]
+====
+[path]``/usr/src``
+ can be deleted or recreated, so it is preferable to keep custom kernel config files in a separate directory, like [path]``/root``
+.
+Link the kernel config file into the [path]``conf``
+ directory.
+If that directory is deleted or overwritten, the kernel config can be re-linked into the new one.
+====
+
+
+A custom config file can be created by copying the [path]``GENERIC``
+ config file.
+In this example, the new custom kernel is for a storage server, so is named [path]``STORAGESERVER``
+:
+
+----
+# cp /usr/src/sys/amd64/conf/GENERIC /root/STORAGESERVER
+# cd /usr/src/sys/amd64/conf
+# ln -s /root/STORAGESERVER .
+----
+
+[path]``/root/STORAGESERVER``
+ is then edited, adding or removing devices or options as shown in  {{< manpage "config" "5" >}}
+.
+
+The custom kernel is built by setting [var]``KERNCONF`` to the kernel config file on the command line:
+
+----
+# make buildkernel KERNCONF=STORAGESERVER
+----
+
+[[_updating_src_installing]]
+=== Installing the Compiled Code
+
+
+After the `buildworld` and `buildkernel` steps have been completed, the new kernel and world are installed:
+
+----
+# cd /usr/src
+# make installkernel
+# shutdown -r now
+# cd /usr/src
+# make installworld
+# shutdown -r now
+----
+
+
+If a custom kernel was built, [var]``KERNCONF``	must also be set to use the new custom kernel:
+
+----
+# cd /usr/src
+# make installkernel KERNCONF=STORAGESERVER
+# shutdown -r now
+# cd /usr/src
+# make installworld
+# shutdown -r now
+----
+
+[[_updating_src_completing]]
+=== Completing the Update
+
+
+A few final tasks complete the update.
+Any modified configuration files are merged with the new versions, outdated libraries are located and removed, then the system is restarted.
+
+[[_updating_src_completing_merge_mergemaster]]
+==== Merging Configuration Files with mergemaster8
+
+ {{< manpage "mergemaster" "8" >}}
+ provides an easy way to merge changes that have been made to system configuration files with new versions of those files.
+
+With [option]``-Ui``,  {{< manpage "mergemaster" "8" >}}
+	  automatically updates files that have not been user-modified and installs new files that are not already present:
+
+----
+# mergemaster -Ui
+----
+
+
+If a file must be manually merged, an interactive display allows the user to choose which portions of the files are kept.
+See  {{< manpage "mergemaster" "8" >}}
+ for more information.
+
+[[_updating_src_completing_check_old]]
+==== Checking for Outdated Files and Libraries
+
+
+Some obsolete files or directories can remain after an update.
+These files can be located:
+
+----
+# make check-old
+----
+
+
+and deleted:
+
+----
+# make delete-old
+----
+
+
+Some obsolete libraries can also remain.
+These can be detected with:
+
+----
+# make check-old-libs
+----
+
+
+and deleted with
+
+----
+# make delete-old-libs
+----
+
+
+Programs which were still using those old libraries will stop working when the library has been deleted.
+These programs must be rebuilt or replaced after deleting the old libraries.
+
+[TIP]
+====
+When all the old files or directories are known to be safe to delete, pressing kbd:[y]
+ and kbd:[Enter]
+ to delete each file can be avoided by setting [var]``BATCH_DELETE_OLD_FILES`` in the command.
+For example:
+
+----
+# make BATCH_DELETE_OLD_FILES=yes delete-old-libs
+----
+====
+
+[[_updating_src_completing_restart]]
+==== Restarting After the Update
+
+
+The last step after updating is to restart the computer so all the changes take effect:
+
+----
+# shutdown -r now
+----
+
+[[_small_lan]]
+== Tracking for Multiple Machines
+= Tracking for Multiple Machines
+:imagesdir: ./images
+Mike Meyer
+
+
+When multiple machines need to track the same source tree, it is a waste of disk space, network bandwidth, and [acronym]``CPU`` cycles to have each system download the sources and rebuild everything.
+The solution is to have one machine do most of the work, while the rest of the machines mount that work via [acronym]``NFS``.
+This section outlines a method of doing so.
+For more information about using [acronym]``NFS``, refer to <<_network_nfs>>.
+
+First, identify a set of machines which will run the same set of binaries, known as a [term]_build set_
+.
+Each machine can have a custom kernel, but will run the same userland binaries.
+From that set, choose a machine to be the [term]_build machine_
+ that the world and kernel are built on.
+Ideally, this is a fast machine that has sufficient spare [acronym]``CPU`` to run [command]``make
+	buildworld`` and [command]``make
+	buildkernel``.
+
+Select a machine to be the [term]_test
+	machine_
+, which will test software updates before they are put into production.
+This _must_ be a machine that can afford to be down for an extended period of time.
+It can be the build machine, but need not be.
+
+All the machines in this build set need to mount [path]``/usr/obj``
+ and [path]``/usr/src``
+ from the build machine via [acronym]``NFS``.
+For multiple build sets, [path]``/usr/src``
+ should be on one build machine, and [acronym]``NFS`` mounted on the rest.
+
+Ensure that [path]``/etc/make.conf``
+ and [path]``/etc/src.conf``
+ on all the machines in the build set agree with the build machine.
+That means that the build machine must build all the parts of the base system that any machine in the build set is going to install.
+Also, each build machine should have its kernel name set with [var]``KERNCONF`` in [path]``/etc/make.conf``
+, and the build machine should list them all in its [var]``KERNCONF``, listing its own kernel first.
+The build machine must have the kernel configuration files for each machine in its [path]``/usr/src/sys/arch/conf``
+.
+
+On the build machine, build the kernel and world as described in <<_makeworld>>, but do not install anything on the build machine.
+Instead, install the built kernel on the test machine.
+On the test machine, mount [path]``/usr/src``
+ and [path]``/usr/obj``
+ via [acronym]``NFS``.
+Then, run [command]``shutdown now`` to go to single-user mode in order to install the new kernel and world and run [command]``mergemaster`` as usual.
+When done, reboot to return to normal multi-user operations.
+
+After verifying that everything on the test machine is working properly, use the same procedure to install the new software on each of the other machines in the build set.
+
+The same methodology can be used for the ports tree.
+The first step is to share [path]``/usr/ports``
+ via [acronym]``NFS`` to all the machines in the build set.
+To configure [path]``/etc/make.conf``
+ to share distfiles, set [var]``DISTDIR`` to a common shared directory that is writable by whichever user [username]``root``
+ is mapped to by the [acronym]``NFS`` mount.
+Each machine should set [var]``WRKDIRPREFIX`` to a local build directory, if ports are to be built locally.
+Alternately, if the build system is to build and distribute packages to the machines in the build set, set [var]``PACKAGES`` on the build system to a directory similar to [var]``DISTDIR``.
+
+ifdef::backend-docbook[]
+[index]
+== Index
+// Generated automatically by the DocBook toolchain.
+endif::backend-docbook[]

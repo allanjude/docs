@@ -1,0 +1,2705 @@
+---
+title: "Firewalls"
+---
+= Firewalls
+:doctype: book
+:sectnums:
+:toc: left
+:icons: font
+:experimental:
+:sourcedir: .
+:imagesdir: ./images
+Joseph J. Barbish; Brad Davis
+
+(((firewall)))
+
+(((security,firewalls)))
+
+[[_firewalls_intro]]
+== Synopsis
+
+
+Firewalls make it possible to filter the incoming and outgoing traffic that flows through a system.
+A firewall can use one or more sets of "`rules`"
+ to inspect network packets as they come in or go out of network connections and either allows the traffic through or blocks it.
+The rules of a firewall can inspect one or more characteristics of the packets such as the protocol type, source or destination host address, and source or destination port.
+
+Firewalls can enhance the security of a host or a network.
+They can be used to do one or more of the following:
+
+* Protect and insulate the applications, services, and machines of an internal network from unwanted traffic from the public Internet.
+* Limit or disable access from hosts of the internal network to services of the public Internet.
+* Support network address translation ([acronym]``NAT``), which allows an internal network to use private [acronym]``IP`` addresses and share a single connection to the public Internet using either a single [acronym]``IP`` address or a shared pool of automatically assigned public addresses.
+
+
+FreeBSD has three firewalls built into the base system: [app]``PF``, [app]``IPFW``, and [app]``IPFILTER``, also known as [app]``IPF``.
+FreeBSD also provides two traffic shapers for controlling bandwidth usage:  {{< manpage "altq" "4" >}}
+ and  {{< manpage "dummynet" "4" >}}
+. [app]``ALTQ`` has traditionally been closely tied with [app]``PF`` and [app]``dummynet`` with [app]``IPFW``.
+Each firewall uses rules to control the access of packets to and from a FreeBSD system, although they go about it in different ways and each has a different rule syntax.
+
+FreeBSD provides multiple firewalls in order to meet the different requirements and preferences for a wide variety of users.
+Each user should evaluate which firewall best meets their needs.
+
+After reading this chapter, you will know:
+
+* How to define packet filtering rules.
+* The differences between the firewalls built into FreeBSD.
+* How to use and configure the [app]``PF`` firewall.
+* How to use and configure the [app]``IPFW`` firewall.
+* How to use and configure the [app]``IPFILTER`` firewall.
+
+
+Before reading this chapter, you should:
+
+* Understand basic FreeBSD and Internet concepts.
+
+
+[NOTE]
+====
+Since all firewalls are based on inspecting the values of selected packet control fields, the creator of the firewall ruleset must have an understanding of how [acronym]``TCP/IP`` works, what the different values in the packet control fields are, and how these values are used in a normal session conversation.
+For a good introduction, refer to http://www.ipprimer.com[Daryl's
+	  TCP/IP Primer].
+====
+
+[[_firewalls_concepts]]
+== Firewall Concepts
+
+
+A ruleset contains a group of rules which pass or block packets based on the values contained in the packet.
+The bi-directional exchange of packets between hosts comprises a session conversation.
+The firewall ruleset processes both the packets arriving from the public Internet, as well as the packets produced by the system as a response to them.
+Each [acronym]``TCP/IP`` service is predefined by its protocol and listening port.
+Packets destined for a specific service originate from the source address using an unprivileged port and target the specific service port on the destination address.
+All the above parameters can be used as selection criteria to create rules which will pass or block services.
+
+To lookup unknown port numbers, refer to [path]``/etc/services``
+.
+Alternatively, visit http://en.wikipedia.org/wiki/List_of_TCP_and_UDP_port_numbers and do a port number lookup to find the purpose of a particular port number.
+
+Check out this link for http://web.archive.org/web/20150803024617/http://www.sans.org/security-resources/idfaq/oddports.php[port numbers used by Trojans].
+
+FTP has two modes:  active mode and passive mode.
+The difference is in how the data channel is acquired.
+Passive mode is more secure as the data channel is acquired by the ordinal ftp session requester.
+For a good explanation of FTP and the different modes, see http://www.slacksite.com/other/ftp.html.
+
+A firewall ruleset can be either "`exclusive`"
+ or "`inclusive`"
+.
+An exclusive firewall allows all traffic through except for the traffic matching the ruleset.
+An inclusive firewall does the reverse as it only allows traffic matching the rules through and blocks everything else.
+
+An inclusive firewall offers better control of the outgoing traffic, making it a better choice for systems that offer services to the public Internet.
+It also controls the type of traffic originating from the public Internet that can gain access to a private network.
+All traffic that does not match the rules is blocked and logged.
+Inclusive firewalls are generally safer than exclusive firewalls because they significantly reduce the risk of allowing unwanted traffic.
+
+[NOTE]
+====
+Unless noted otherwise, all configuration and example rulesets in this chapter create inclusive firewall rulesets.
+====
+
+
+Security can be tightened further using a "`stateful
+	firewall`"
+.
+This type of firewall keeps track of open connections and only allows traffic which either matches an existing connection or opens a new, allowed connection.
+
+Stateful filtering treats traffic as a bi-directional exchange of packets comprising a session.
+When state is specified on a matching rule the firewall dynamically generates internal rules for each anticipated packet being exchanged during the session.
+It has sufficient matching capabilities to determine if a packet is valid for a session.
+Any packets that do not properly fit the session template are automatically rejected.
+
+When the session completes, it is removed from the dynamic state table.
+
+Stateful filtering allows one to focus on blocking/passing new sessions.
+If the new session is passed, all its subsequent packets are allowed automatically and any impostor packets are automatically rejected.
+If a new session is blocked, none of its subsequent packets are allowed.
+Stateful filtering provides advanced matching abilities capable of defending against the flood of different attack methods employed by attackers.
+
+[acronym]``NAT`` stands for __Network
+	Address Translation__.
+ [acronym]``NAT`` function enables the private LAN behind the firewall to share a single ISP-assigned IP address, even if that address is dynamically assigned.
+NAT allows each computer in the LAN to have Internet access, without having to pay the ISP for multiple Internet accounts or IP addresses.
+
+[acronym]``NAT`` will automatically translate the private LAN IP address for each system on the LAN to the single public IP address as packets exit the firewall bound for the public Internet.
+It also performs the reverse translation for returning packets.
+
+According to RFC 1918, the following IP address ranges are reserved for private networks which will never be routed directly to the public Internet, and therefore are available for use with NAT:
+
+* ``10.0.0.0/8``.
+* ``172.16.0.0/12``.
+* ``192.168.0.0/16``.
+
+
+[WARNING]
+====
+When working with the firewall rules, be __very
+	  careful__.
+Some configurations _can
+	  lock the administrator out_ of the server.
+To be on the safe side, consider performing the initial firewall configuration from the local console rather than doing it remotely over [app]``ssh``.
+====
+
+[[_firewalls_pf]]
+== PF
+= PF
+:imagesdir: ./images
+John Ferrell
+
+(((firewall,PF)))
+
+
+Since FreeBSD{nbsp}5.3, a ported version of OpenBSD's [app]``PF`` firewall has been included as an integrated part of the base system. [app]``PF`` is a complete, full-featured firewall that has optional support for [app]``ALTQ`` (Alternate Queuing), which provides Quality of Service ([acronym]``QoS``).
+
+The OpenBSD Project maintains the definitive reference for [app]``PF`` in the http://www.openbsd.org/faq/pf/[PF FAQ].
+Peter Hansteen maintains a thorough [app]``PF`` tutorial at http://home.nuug.no/~peter/pf/.
+
+[WARNING]
+====
+When reading the http://www.openbsd.org/faq/pf/[PF FAQ], keep in mind that FreeBSD's version of [app]``PF`` has diverged substantially from the upstream OpenBSD version over the years.
+Not all features work the same way on FreeBSD as they do in OpenBSD and vice versa.
+====
+
+
+The link:FreeBSD packet filter mailing list is a good place to ask questions about configuring and running the [app]``PF`` firewall.
+Check the mailing list archives before asking a question as it may have already been answered.
+
+This section of the Handbook focuses on [app]``PF`` as it pertains to FreeBSD.
+It demonstrates how to enable [app]``PF`` and [app]``ALTQ``.
+It also provides several examples for creating rulesets on a FreeBSD system.
+
+=== Enabling PF
+
+
+To use [app]``PF``, its kernel module must be first loaded.
+This section describes the entries that can be added to [path]``/etc/rc.conf``
+	to enable [app]``PF``.
+
+Start by adding `pf_enable=yes` to [path]``/etc/rc.conf``
+:
+
+----
+# sysrc pf_enable=yes
+----
+
+
+Additional options, described in  {{< manpage "pfctl" "8" >}}
+, can be passed to [app]``PF`` when it is started.
+Add or change this entry in [path]``/etc/rc.conf``
+	and specify any required flags between the two quotes (``""``):
+
+[source]
+----
+pf_flags=""                     # additional flags for pfctl startup
+----
+
+[app]``
+PF`` will not start if it cannot find its ruleset configuration file.
+By default, FreeBSD does not ship with a ruleset and there is no [path]``/etc/pf.conf``
+.
+Example rulesets can be found in [path]``/usr/share/examples/pf/``
+.
+If a custom ruleset has been saved somewhere else, add a line to [path]``/etc/rc.conf``
+ which specifies the full path to the file:
+
+[source]
+----
+pf_rules="/path/to/pf.conf"
+----
+
+
+Logging support for [app]``PF`` is provided by  {{< manpage "pflog" "4" >}}
+.
+To enable logging support, add `pflog_enable=yes` to [path]``/etc/rc.conf``
+:
+
+----
+# sysrc pflog_enable=yes
+----
+
+
+The following lines can also be added to change the default location of the log file or to specify any additional flags to pass to  {{< manpage "pflog" "4" >}}
+ when it is started:
+
+[source]
+----
+pflog_logfile="/var/log/pflog"  # where pflogd should store the logfile
+pflog_flags=""                  # additional flags for pflogd startup
+----
+
+
+Finally, if there is a [acronym]``LAN`` behind the firewall and packets need to be forwarded for the computers on the [acronym]``LAN``, or [acronym]``NAT`` is required, enable the following option:
+
+[source]
+----
+gateway_enable="YES"            # Enable as LAN gateway
+----
+
+
+After saving the needed edits, [app]``PF`` can be started with logging support by typing:
+
+----
+# service pf start
+# service pflog start
+----
+
+
+By default, [app]``PF`` reads its configuration rules from [path]``/etc/pf.conf``
+ and modifies, drops, or passes packets according to the rules or definitions specified in this file.
+The FreeBSD installation includes several sample files located in [path]``/usr/share/examples/pf/``
+.
+Refer to the http://www.openbsd.org/faq/pf/[PF
+	  FAQ] for complete coverage of [app]``PF`` rulesets.
+
+To control [app]``PF``, use [command]``pfctl``.
+ <<_pfctl>> summarizes some useful options to this command.
+Refer to  {{< manpage "pfctl" "8" >}}
+	for a description of all available options:
+[[_pfctl]]
+.Useful [command]``pfctl`` Options
+[cols="1,1", frame="none", options="header"]
+|===
+| Command
+| Purpose
+
+|[command]``pfctl
+		  -e``
+|Enable [app]``PF``.
+
+|[command]``pfctl
+		  -d``
+|Disable [app]``PF``.
+
+|[command]``pfctl -F all
+		  -f /etc/pf.conf``
+|Flush all [acronym]``NAT``, filter, state,
+		and table rules and reload
+		[path]``/etc/pf.conf``
+.
+
+|[command]``pfctl -s [ rules \| nat \|
+		  states ]``
+|Report on the filter rules,
+		[acronym]``NAT`` rules, or state
+		table.
+
+|[command]``pfctl -vnf
+		  /etc/pf.conf``
+|Check [path]``/etc/pf.conf``
+ for
+		errors, but do not load ruleset.
+|===
+
+[TIP]
+====
+[package]#security/sudo#
+ is useful for running commands like [command]``pfctl`` that require elevated privileges.
+It can be installed from the Ports Collection.
+====
+
+
+To keep an eye on the traffic that passes through the [app]``PF`` firewall, consider installing the [package]#sysutils/pftop#
+ package or port.
+Once installed, [app]``pftop`` can be run to view a running snapshot of traffic in a format which is similar to  {{< manpage "top" "1" >}}
+.
+
+[[_pf_tutorial]]
+=== PF Rulesets
+= PF Rulesets
+:imagesdir: ./images
+Peter Hansteen
+
+
+This section demonstrates how to create a customized ruleset.
+It starts with the simplest of rulesets and builds upon its concepts using several examples to demonstrate real-world usage of [app]``PF``'s many features.
+
+The simplest possible ruleset is for a single machine that does not run any services and which needs access to one network, which may be the Internet.
+To create this minimal ruleset, edit [path]``/etc/pf.conf``
+ so it looks like this:
+
+[source]
+----
+block in all
+pass out all keep state
+----
+
+
+The first rule denies all incoming traffic by default.
+The second rule allows connections created by this system to pass out, while retaining state information on those connections.
+This state information allows return traffic for those connections to pass back and should only be used on machines that can be trusted.
+The ruleset can be loaded with:
+
+----
+# pfctl -e ; pfctl -f /etc/pf.conf
+----
+
+
+In addition to keeping state, [app]``PF`` provides [term]_lists_
+ and [term]_macros_
+ which can be defined for use when creating rules.
+Macros can include lists and need to be defined before use.
+As an example, insert these lines at the very top of the ruleset:
+
+[source]
+----
+tcp_services = "{ ssh, smtp, domain, www, pop3, auth, pop3s }"
+udp_services = "{ domain }"
+----
+
+[app]``
+PF`` understands port names as well as port numbers, as long as the names are listed in [path]``/etc/services``
+.
+This example creates two macros.
+The first is a list of seven [acronym]``TCP`` port names and the second is one [acronym]``UDP`` port name.
+Once defined, macros can be used in rules.
+In this example, all traffic is blocked except for the  connections initiated by this system for the seven specified [acronym]``TCP`` services and the one specified [acronym]``UDP`` service:
+
+[source]
+----
+tcp_services = "{ ssh, smtp, domain, www, pop3, auth, pop3s }"
+udp_services = "{ domain }"
+block all
+pass out proto tcp to any port $tcp_services keep state
+pass proto udp to any port $udp_services keep state
+----
+
+
+Even though [acronym]``UDP`` is considered to be a stateless protocol, [app]``PF`` is able to track some state information.
+For example, when a [acronym]``UDP`` request is passed which asks a name server about a domain name, [app]``PF`` will watch for the response to pass it back.
+
+Whenever an edit is made to a ruleset, the new rules must be loaded so they can be used:
+
+----
+# pfctl -f /etc/pf.conf
+----
+
+
+If there are no syntax errors, [command]``pfctl``	will not output any messages during the rule load.
+Rules can also be tested before attempting to load them:
+
+----
+# pfctl -nf /etc/pf.conf
+----
+
+
+Including [option]``-n`` causes the rules to be interpreted only, but not loaded.
+This provides an opportunity to correct any errors.
+At all times, the last valid ruleset loaded will be enforced until either [app]``PF`` is disabled or a new ruleset is loaded.
+
+[TIP]
+====
+Adding [option]``-v`` to a [command]``pfctl``	  ruleset verify or load will display the fully parsed rules exactly the way they will be loaded.
+This is extremely useful when debugging rules.
+====
+
+[[_pftut_gateway]]
+==== A Simple Gateway with NAT
+
+
+This section demonstrates how to configure a FreeBSD system running [app]``PF`` to act as a gateway for at least one other machine.
+The gateway needs at least two network interfaces, each connected to a separate network.
+In this example, [path]``xl1``
+ is connected to the Internet and [path]``xl0``
+ is connected to the internal network.
+
+First, enable the gateway to let the machine forward the network traffic it receives on one interface to another interface.
+This [app]``sysctl``	  setting will forward [acronym]``IPv4`` packets:
+
+----
+# sysctl net.inet.ip.forwarding=1
+----
+
+
+To forward [acronym]``IPv6`` traffic, use:
+
+----
+# sysctl net.inet6.ip6.forwarding=1
+----
+
+
+To enable these settings at system boot, use  {{< manpage "sysrc" "8" >}}
+ to add them to [path]``/etc/rc.conf``
+:
+
+----
+# sysrc gateway_enable=yes
+# sysrc ipv6_gateway_enable=yes
+----
+
+
+Verify with [command]``ifconfig`` that both of the interfaces are up and running.
+
+Next, create the [app]``PF`` rules to allow the gateway to pass traffic.
+While the following rule allows stateful traffic to pass from the Internet  to hosts on the network, the `to` keyword does not guarantee passage all the way from source to destination:
+
+[source]
+----
+pass in on xl1 from xl1:network to xl0:network port $ports keep state
+----
+
+
+That rule only lets the traffic pass in to the gateway on the internal interface.
+To let the packets go further, a matching rule is needed:
+
+[source]
+----
+pass out on xl0 from xl1:network to xl0:network port $ports keep state
+----
+
+
+While these two rules will work, rules this specific are rarely needed.
+For a busy network admin, a readable ruleset is a safer ruleset.
+The remainder of this section demonstrates how to keep the rules as simple as possible for readability.
+For example, those two rules could be replaced with one rule:
+
+[source]
+----
+pass from xl1:network to any port $ports keep state
+----
+
+
+The `interface:network` notation can be replaced with a macro to make the ruleset even more readable.
+For example, a `$localnet` macro could be defined as the network directly attached to the internal interface (``$xl1:network``). Alternatively, the definition of `$localnet` could be changed to an _IP address/netmask_ notation to denote a network, such as `192.168.100.1/24` for a subnet of private addresses.
+
+If required, `$localnet` could even be defined as a list of networks.
+Whatever the specific needs, a sensible `$localnet` definition could be used in a typical pass rule as follows:
+
+[source]
+----
+pass from $localnet to any port $ports keep state
+----
+
+
+The following sample ruleset allows all traffic initiated by machines on the internal network.
+It first defines two macros to represent the external and internal 3COM interfaces of the gateway.
+
+[NOTE]
+====
+For dialup users, the external interface will use [path]``tun0``
+.
+For an [acronym]``ADSL`` connection, specifically those using [acronym]``PPP`` over Ethernet ([acronym]``PPPoE``), the correct external interface is [path]``tun0``
+, not the physical Ethernet interface.
+====
+
+[source]
+----
+ext_if = "xl0"	# macro for external interface - use tun0 for PPPoE
+int_if = "xl1"	# macro for internal interface
+localnet = $int_if:network
+# ext_if IP address could be dynamic, hence ($ext_if)
+nat on $ext_if from $localnet to any -> ($ext_if)
+block all
+pass from { lo0, $localnet } to any keep state
+----
+
+
+This ruleset introduces the `nat` rule which is used to handle the network address translation from the non-routable addresses inside the internal network to the [acronym]``IP`` address assigned to the external interface.
+The parentheses surrounding the last part of the nat rule `($ext_if)` is included when the [acronym]``IP`` address of the external interface is dynamically assigned.
+It ensures that network traffic runs without serious interruptions even if the external [acronym]``IP`` address changes.
+
+Note that this ruleset probably allows more traffic to pass out of the network than is needed.
+One reasonable setup could create this macro:
+
+[source]
+----
+client_out = "{ ftp-data, ftp, ssh, domain, pop3, auth, nntp, http, \
+    https, cvspserver, 2628, 5999, 8000, 8080 }"
+----
+
+
+to use in the main pass rule:
+
+[source]
+----
+pass inet proto tcp from $localnet to any port $client_out \
+    flags S/SA keep state
+----
+
+
+A few other pass rules may be needed.
+This one enables [acronym]``SSH`` on the external interface:
+
+[source]
+----
+pass in inet proto tcp to $ext_if port ssh
+----
+
+
+This macro definition and rule allows [acronym]``DNS`` and [acronym]``NTP`` for internal clients:
+
+[source]
+----
+udp_services = "{ domain, ntp }"
+pass quick inet proto { tcp, udp } to any port $udp_services keep state
+----
+
+
+Note the `quick` keyword in this rule.
+Since the ruleset consists of several rules, it is important to understand the relationships between the rules in a ruleset.
+Rules are evaluated from top to bottom, in the sequence they are written.
+For each packet or connection evaluated by [app]``PF``, _the last matching rule_ in the ruleset is the one which is applied.
+However, when a packet matches a rule which contains the `quick` keyword, the rule processing stops and the packet is treated according to that rule.
+This is very useful when an exception to the general rules is needed.
+
+[[_pftut_ftp]]
+==== Creating an FTP Proxy
+
+
+Configuring working [acronym]``FTP`` rules can be problematic due to the nature of the [acronym]``FTP``	  protocol.
+ [acronym]``FTP`` pre-dates firewalls by several decades and is insecure in its design.
+The most common points against using [acronym]``FTP``	  include:
+
+* Passwords are transferred in the clear.
+* The protocol demands the use of at least two [acronym]``TCP`` connections (control and data) on separate ports.
+* When a session is established, data is communicated using randomly selected ports.
+
+
+All of these points present security challenges, even before considering any potential security weaknesses in client or server software.
+More secure alternatives for file transfer exist, such as  {{< manpage "sftp" "1" >}}
+ or  {{< manpage "scp" "1" >}}
+, which both feature authentication and data transfer over encrypted connections..
+
+For those situations when [acronym]``FTP`` is required, [app]``PF`` provides redirection of [acronym]``FTP`` traffic to a small proxy program called  {{< manpage "ftp-proxy" "8" >}}
+, which is included in the base system of FreeBSD.
+The role of the proxy is to dynamically insert and delete rules in the ruleset, using a set of anchors, to correctly handle [acronym]``FTP`` traffic.
+
+To enable the [acronym]``FTP`` proxy, add this line to [path]``/etc/rc.conf``
+:
+
+[source]
+----
+ftpproxy_enable="YES"
+----
+
+
+Then start the proxy by running [command]``service
+	    ftp-proxy start``.
+
+For a basic configuration, three elements need to be added to [path]``/etc/pf.conf``
+.
+First, the anchors which the proxy will use to insert the rules it generates for the [acronym]``FTP`` sessions:
+
+[source]
+----
+nat-anchor "ftp-proxy/*"
+rdr-anchor "ftp-proxy/*"
+----
+
+
+Second, a pass rule is needed to allow [acronym]``FTP`` traffic in to the proxy.
+
+Third, redirection and [acronym]``NAT`` rules need to be defined before the filtering rules.
+Insert this `rdr` rule immediately after the `nat` rule:
+
+[source]
+----
+rdr pass on $int_if proto tcp from any to any port ftp -> 127.0.0.1 port 8021
+----
+
+
+Finally, allow the redirected traffic to pass:
+
+[source]
+----
+pass out proto tcp from $proxy to any port ftp
+----
+
+
+where `$proxy` expands to the address the proxy daemon is bound to.
+
+Save [path]``/etc/pf.conf``
+, load the new rules, and verify from a client that [acronym]``FTP``	  connections are working:
+
+----
+# pfctl -f /etc/pf.conf
+----
+
+
+This example covers a basic setup where the clients in the local network need to contact [acronym]``FTP``	  servers elsewhere.
+This basic configuration should work well with most combinations of [acronym]``FTP``	  clients and servers.
+As shown in  {{< manpage "ftp-proxy" "8" >}}
+, the proxy's behavior can be changed in various ways by adding options to the `ftpproxy_flags=` line.
+Some clients or servers may have specific quirks that must be compensated for in the configuration, or there may be a need to integrate the proxy in specific ways such as assigning [acronym]``FTP`` traffic to a specific queue.
+
+For ways to run an [acronym]``FTP`` server protected by [app]``PF`` and  {{< manpage "ftp-proxy" "8" >}}
+, configure a separate [command]``ftp-proxy`` in reverse mode, using [option]``-R``, on a separate port with its own redirecting pass rule.
+
+[[_pftut_icmp]]
+==== Managing ICMP
+
+
+Many of the tools used for debugging or troubleshooting a [acronym]``TCP/IP`` network rely on the Internet Control Message Protocol ([acronym]``ICMP``), which was designed specifically with debugging in mind.
+
+The [acronym]``ICMP`` protocol sends and receives _control messages_ between hosts and gateways, mainly to provide feedback to a sender about any unusual or difficult conditions enroute to the target host.
+Routers use [acronym]``ICMP`` to negotiate packet sizes and other transmission parameters in a process often referred to as __path [acronym]``__MTU__``
+	    discovery__.
+
+From a firewall perspective, some [acronym]``ICMP`` control messages are vulnerable to known attack vectors.
+Also, letting all diagnostic traffic pass unconditionally makes debugging easier, but it also makes it easier for others to extract information about the network.
+For these reasons, the following rule may not be optimal:
+
+[source]
+----
+pass inet proto icmp from any to any
+----
+
+
+One solution is to let all [acronym]``ICMP``	  traffic from the local network through while stopping all probes from outside the network:
+
+[source]
+----
+pass inet proto icmp from $localnet to any keep state
+pass inet proto icmp from any to $ext_if keep state
+----
+
+
+Additional options are available which demonstrate some of [app]``PF``'s flexibility.
+For example, rather than allowing all [acronym]``ICMP``	  messages, one can specify the messages used by  {{< manpage "ping" "8" >}}
+	  and  {{< manpage "traceroute" "8" >}}
+.
+Start by defining a macro for that type of message:
+
+[source]
+----
+icmp_types = "echoreq"
+----
+
+
+and a rule which uses the macro:
+
+[source]
+----
+pass inet proto icmp all icmp-type $icmp_types keep state
+----
+
+
+If other types of [acronym]``ICMP`` packets are needed, expand `icmp_types` to a list of those packet types.
+Type [command]``more
+	    /usr/src/sbin/pfctl/pfctl_parser.c`` to see the list of [acronym]``ICMP`` message types supported by [app]``PF``.
+Refer to http://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml	  for an explanation of each message type.
+
+Since Unix [command]``traceroute`` uses [acronym]``UDP`` by default, another rule is needed to allow Unix [command]``traceroute``:
+
+[source]
+----
+# allow out the default range for traceroute(8):
+pass out on $ext_if inet proto udp from any to any port 33433 >< 33626 keep state
+----
+
+
+Since [command]``TRACERT.EXE`` on Microsoft Windows systems uses [acronym]``ICMP`` echo request messages, only the first rule is needed to allow network traces from those systems.
+Unix [command]``traceroute`` can be instructed to use other protocols as well, and will use [acronym]``ICMP`` echo request messages if [option]``-I`` is used.
+Check the  {{< manpage "traceroute" "8" >}}
+ man page for details.
+
+[[_pftut_pathmtudisc]]
+===== Path MTU Discovery
+
+
+Internet protocols are designed to be device independent, and one consequence of device independence is that the optimal packet size for a given connection cannot always be predicted reliably.
+The main constraint on packet size is the [term]_Maximum Transmission
+	      Unit_
+ ([acronym]``MTU``) which sets the upper limit on the packet size for an interface.
+Type [command]``ifconfig`` to view the [acronym]``MTU``s for a system's network interfaces.
+
+[acronym]``TCP/IP`` uses a process known as path [acronym]``MTU`` discovery to determine the right packet size for a connection.
+This process sends packets of varying sizes with the "`Do not fragment`"
+	    flag set, expecting an [acronym]``ICMP`` return packet of "`type 3, code 4`"
+ when the upper limit has been reached.
+Type 3 means "`destination
+	      unreachable`"
+, and code 4 is short for "`fragmentation needed, but the do-not-fragment flag
+	      is set`"
+.
+To allow path MTU discovery in order to support connections to other [acronym]``MTU``s, add the `destination unreachable` type to the `icmp_types` macro:
+
+[source]
+----
+icmp_types = "{ echoreq, unreach }"
+----
+
+
+Since the pass rule already uses that macro, it does not need to be modified to support the new [acronym]``ICMP`` type:
+
+[source]
+----
+pass inet proto icmp all icmp-type $icmp_types keep state
+----
+
+[app]``
+PF`` allows filtering on all variations of [acronym]``ICMP`` types and codes.
+The list of possible types and codes are documented in  {{< manpage "icmp" "4" >}}
+ and  {{< manpage "icmp6" "4" >}}
+.
+
+[[_pftut_tables]]
+==== Using Tables
+
+
+Some types of data are relevant to filtering and redirection at a given time, but their definition is too long to be included in the ruleset file. [app]``PF`` supports the use of tables, which are defined lists that can be manipulated without needing to reload the entire ruleset, and which can provide fast lookups.
+Table names are always enclosed within ``< >``, like this:
+
+[source]
+----
+table <clients> { 192.168.2.0/24, !192.168.2.5 }
+----
+
+
+In this example, the `192.168.2.0/24`	  network is part of the table, except for the address ``192.168.2.5``, which is excluded using the `!` operator.
+It is also possible to load tables from files where each item is on a separate line, as seen in this example [path]``/etc/clients``
+:
+
+[source]
+----
+192.168.2.0/24
+!192.168.2.5
+----
+
+
+To refer to the file, define the table like this:
+
+[source]
+----
+table <clients> persist file "/etc/clients"
+----
+
+
+Once the table is defined, it can be referenced by a rule:
+
+[source]
+----
+pass inet proto tcp from <clients> to any port $client_out flags S/SA keep state
+----
+
+
+A table's contents can be manipulated live, using [command]``pfctl``.
+This example adds another network to the table:
+
+----
+# pfctl -t clients -T add 192.168.1.0/16
+----
+
+
+Note that any changes made this way will take affect now, making them ideal for testing, but will not survive a power failure or reboot.
+To make the changes permanent, modify the definition of the table in the ruleset or edit the file that the table refers to.
+One can maintain the on-disk copy of the table using a  {{< manpage "cron" "8" >}}
+ job which dumps the table's contents to disk at regular intervals, using a command such as [command]``pfctl -t clients -T show
+	    >/etc/clients``.
+Alternatively, [path]``/etc/clients``
+ can be updated with the in-memory table contents:
+
+----
+# pfctl -t clients -T replace -f /etc/clients
+----
+
+[[_pftut_overload]]
+==== Using Overload Tables to Protect SSH
+
+
+Those who run [acronym]``SSH`` on an external interface have probably seen something like this in the authentication logs:
+
+[source]
+----
+Sep 26 03:12:34 skapet sshd[25771]: Failed password for root from 200.72.41.31 port 40992 ssh2
+Sep 26 03:12:34 skapet sshd[5279]: Failed password for root from 200.72.41.31 port 40992 ssh2
+Sep 26 03:12:35 skapet sshd[5279]: Received disconnect from 200.72.41.31: 11: Bye Bye
+Sep 26 03:12:44 skapet sshd[29635]: Invalid user admin from 200.72.41.31
+Sep 26 03:12:44 skapet sshd[24703]: input_userauth_request: invalid user admin
+Sep 26 03:12:44 skapet sshd[24703]: Failed password for invalid user admin from 200.72.41.31 port 41484 ssh2
+----
+
+
+This is indicative of a brute force attack where somebody or some program is trying to discover the user name and password which will let them into the system.
+
+If external [acronym]``SSH`` access is needed for legitimate users, changing the default port used by [acronym]``SSH`` can offer some protection.
+However, [app]``PF`` provides a more elegant solution.
+Pass rules can contain limits on what connecting hosts can do and violators can be banished to a table of addresses which are denied some or all access.
+It is even possible to drop all existing connections from machines which overreach the limits.
+
+To configure this, create this table in the tables section of the ruleset:
+
+[source]
+----
+table <bruteforce> persist
+----
+
+
+Then, somewhere early in the ruleset, add rules to block brute access while allowing legitimate access:
+
+[source]
+----
+block quick from <bruteforce>
+pass inet proto tcp from any to $localnet port $tcp_services \
+    flags S/SA keep state \
+    (max-src-conn 100, max-src-conn-rate 15/5, \
+    overload <bruteforce> flush global)
+----
+
+
+The part in parentheses defines the limits and the numbers should be changed to meet local requirements.
+It can be read as follows:
+
+`max-src-conn` is the number of simultaneous connections allowed from one host.
+
+`max-src-conn-rate` is the rate of new connections allowed from any single host ([replaceable]``15``) per number of seconds ([replaceable]``5``).
+
+`overload <bruteforce>` means that any host which exceeds these limits gets its address added to the `bruteforce` table.
+The ruleset blocks all traffic from addresses in the `bruteforce` table.
+
+Finally, `flush global` says that when a host reaches the limit, that all (``global``) of that host's connections will be terminated (``flush``).
+
+[NOTE]
+====
+These rules will _not_ block slow bruteforcers, as described in http://home.nuug.no/~peter/hailmary2013/.
+====
+
+
+This example ruleset is intended mainly as an illustration.
+For example, if a generous number of connections in general are wanted, but the desire is to be more restrictive when it comes to [app]``ssh``, supplement the rule above with something like the one below, early on in the rule set:
+
+[source]
+----
+pass quick proto { tcp, udp } from any to any port ssh \
+    flags S/SA keep state \
+    (max-src-conn 15, max-src-conn-rate 5/3, \
+    overload <bruteforce> flush global)
+----
+
+.It May Not be Necessary to Block AllOverloaders
+[NOTE]
+====
+It is worth noting that the overload mechanism is a general technique which does not apply exclusively to [acronym]``SSH``, and it is not always optimal to entirely block all traffic from offenders.
+
+For example, an overload rule could be used to protect a mail service or a web service, and the overload table could be used in a rule to assign offenders to a queue with a minimal bandwidth allocation or to redirect to a specific web page.
+====
+
+
+Over time, tables will be filled by overload rules and their size will grow incrementally, taking up more memory.
+Sometimes an [acronym]``IP`` address that is blocked is a dynamically assigned one, which has since been assigned to a host who has a legitimate reason to communicate with hosts in the local network.
+
+For situations like these, [app]``pfctl`` provides the ability to expire table entries.
+For example, this command will remove `<bruteforce>` table entries which have not been referenced for `86400`	  seconds:
+
+----
+# pfctl -t bruteforce -T expire 86400
+----
+
+
+Similar functionality is provided by [package]#security/expiretable#
+, which removes table entries which have not been accessed for a specified period of time.
+
+Once installed, [app]``expiretable``	  can be run to remove `<bruteforce>`	  table entries older than a specified age.
+This example removes all entries older than 24 hours:
+
+[source]
+----
+/usr/local/sbin/expiretable -v -d -t 24h bruteforce
+----
+
+[[_pftut_spamd]]
+==== Protecting Against SPAM
+
+
+Not to be confused with the [app]``spamd`` daemon which comes bundled with [app]``spamassassin``, [package]#mail/spamd#
+ can be configured with [app]``PF`` to provide an outer defense against [acronym]``SPAM``.
+This [app]``spamd`` hooks into the [app]``PF`` configuration using a set of redirections.
+
+Spammers tend to send a large number of messages, and [acronym]``SPAM`` is mainly sent from a few spammer friendly networks and a large number of hijacked machines, both of which are reported to [term]_blacklists_
+ fairly quickly.
+
+When an [acronym]``SMTP`` connection from an address in a blacklist is received, [app]``spamd`` presents its banner and immediately switches to a mode where it answers [acronym]``SMTP`` traffic one byte at a time.
+This technique, which is intended to waste as much time as possible on the spammer's end, is called [term]_tarpitting_
+.
+The specific implementation which uses one byte [acronym]``SMTP``	  replies is often referred to as [term]_stuttering_
+.
+
+This example demonstrates the basic procedure for setting up [app]``spamd`` with automatically updated blacklists.
+Refer to the man pages which are installed with [package]#mail/spamd#
+ for more information.
+
+.Procedure: Configuring [app]``spamd``
+. Install the [package]#mail/spamd# package or port. To use [app]``spamd``'s greylisting features,  {{< manpage "fdescfs" "5" >}} must be mounted at [path]``/dev/fd`` . Add the following line to [path]``/etc/fstab`` :
++
+
+[source]
+----
+ fdescfs /dev/fd fdescfs rw 0 0
+----
++
+Then, mount the filesystem:
++
+
+[source]
+----
+# mount fdescfs
+----
+. Next, edit the [app]``PF`` ruleset to include:
++
+
+[source]
+----
+table <spamd> persist
+table <spamd-white> persist
+rdr pass on $ext_if inet proto tcp from <spamd> to \
+    { $ext_if, $localnet } port smtp -> 127.0.0.1 port 8025
+rdr pass on $ext_if inet proto tcp from !<spamd-white> to \
+    { $ext_if, $localnet } port smtp -> 127.0.0.1 port 8025
+----
++
+The two tables `<spamd>` and `<spamd-white>` are essential. [acronym]``SMTP`` traffic from an address listed in `<spamd>` but not in `<spamd-white>` is redirected to the [app]``spamd`` daemon listening at port 8025.
+. The next step is to configure [app]``spamd`` in [path]``/usr/local/etc/spamd.conf`` and to add some [path]``rc.conf`` parameters.
++ 
+The installation of [package]#mail/spamd#
+includes a sample configuration file ([path]``/usr/local/etc/spamd.conf.sample``
+) and a man page for [path]``spamd.conf``
+.
+Refer to these for additional configuration options beyond those shown in this example.
++ 
+One of the first lines in the configuration file that does not begin with a `\#` comment sign contains the block which defines the `all` list, which specifies the lists to use:
++
+
+[source]
+----
+all:\
+    :traplist:whitelist:
+----
++
+This entry adds the desired blacklists, separated by colons (``:``).  To use a whitelist to subtract addresses from a blacklist, add the name of the whitelist _immediately_ after the name of that blacklist.
+For example: ``:blacklist:whitelist:``.
++ 
+This is followed by the specified blacklist's definition:
++
+
+[source]
+----
+traplist:\
+    :black:\
+    :msg="SPAM. Your address %A has sent spam within the last 24 hours":\
+    :method=http:\
+    :file=www.openbsd.org/spamd/traplist.gz
+----
++
+where the first line is the name of the blacklist and the second line specifies the list type.
+The `msg` field contains the message to display to blacklisted senders during the [acronym]``SMTP`` dialogue.
+The `method` field specifies how [app]``spamd-setup`` fetches the list data; supported methods are ``http``, ``ftp``, from a `file` in a mounted file system, and via `exec` of an external program.
+Finally, the `file` field specifies the name of the file [app]``spamd``	      expects to receive.
++ 
+The definition of the specified whitelist is similar, but omits the `msg` field since a message is not needed:
++
+
+[source]
+----
+whitelist:\
+    :white:\
+    :method=file:\
+    :file=/var/mail/whitelist.txt
+----
++
+.Choose Data Sources with Care
+TIP: Using all the blacklists in the sample [path]``spamd.conf``
+ will blacklist large blocks of the Internet.
+Administrators need to edit the file to create an optimal configuration which uses applicable data sources and, when necessary, uses custom lists.
++
+
+
++
+Next, add this entry to [path]``/etc/rc.conf``
+.
+Additional flags are described in the man page specified by the comment:
++
+
+[source]
+----
+spamd_flags="-v" # use "" and see spamd-setup(8) for flags
+----
++
+When finished, reload the ruleset, start [app]``spamd`` by typing [command]``service obspamd start``, and complete the configuration using [command]``spamd-setup``.
+Finally, create a  {{< manpage "cron" "8" >}}
+job which calls [command]``spamd-setup`` to update the tables at reasonable intervals.
+
+
+On a typical gateway in front of a mail server, hosts will soon start getting trapped within a few seconds to several minutes.
+
+[app]``PF`` also supports [term]_greylisting_
+, which temporarily rejects messages from unknown hosts with [replaceable]``45n`` codes.
+Messages from greylisted hosts which try again within a reasonable time are let through.
+Traffic from senders which are set up to behave within the limits set by RFC 1123 and RFC 2821 are immediately let through.
+
+More information about greylisting as a technique can be found at the http://www.greylisting.org/[greylisting.org]	  web site.
+The most amazing thing about greylisting, apart from its simplicity, is that it still works.
+Spammers and malware writers have been very slow to adapt to bypass this technique.
+
+The basic procedure for configuring greylisting is as follows:
+
+.Procedure: Configuring Greylisting
+. Make sure that  {{< manpage "fdescfs" "5" >}} is mounted as described in Step 1 of the previous Procedure.
+. To run [app]``spamd`` in greylisting mode, add this line to [path]``/etc/rc.conf`` :
++
+
+[source]
+----
+spamd_grey="YES"  # use spamd greylisting if YES
+----
++
+Refer to the [app]``spamd`` man page for descriptions of additional related parameters.
+. To complete the greylisting setup:
++
+
+[source]
+----
+# service obspamd restart
+# service obspamlogd start
+----
+
+
+Behind the scenes, the [app]``spamdb``	  database tool and the [app]``spamlogd``	  whitelist updater perform essential functions for the greylisting feature.
+ [app]``spamdb`` is the administrator's main interface to managing the black, grey, and white lists via the contents of the [path]``/var/db/spamdb``
+ database.
+
+[[_pftut_hygiene]]
+==== Network Hygiene
+
+
+This section describes how ``block-policy``, ``scrub``, and `antispoof` can be used to make the ruleset behave sanely.
+
+The `block-policy` is an option which can be set in the `options` part of the ruleset, which precedes the redirection and filtering rules.
+This option determines which feedback, if any, [app]``PF`` sends to hosts that are blocked by a rule.
+The option has two possible values: `drop` drops blocked packets with no feedback, and `return` returns a status code such as ``Connection refused``.
+
+If not set, the default policy is ``drop``.
+To change the ``block-policy``, specify the desired value:
+
+[source]
+----
+set block-policy return
+----
+
+
+In [app]``PF``, `scrub` is a keyword which enables network packet normalization.
+This process reassembles fragmented packets and drops TCP packets that have invalid flag combinations.
+Enabling `scrub` provides a measure of protection against certain kinds of attacks based on incorrect handling of packet fragments.
+A number of options are available, but the simplest form is suitable for most configurations:
+
+[source]
+----
+scrub in all
+----
+
+
+Some services, such as [acronym]``NFS``, require specific fragment handling options.
+Refer to https://home.nuug.no/~peter/pf/en/scrub.html	  for more information.
+
+This example reassembles fragments, clears the "`do not fragment`"
+ bit, and sets the maximum segment size to 1440 bytes:
+
+[source]
+----
+scrub in all fragment reassemble no-df max-mss 1440
+----
+
+
+The `antispoof` mechanism protects against activity from spoofed or forged [acronym]``IP`` addresses, mainly by blocking packets appearing on interfaces and in directions which are logically not possible.
+
+These rules weed out spoofed traffic coming in from the rest of the world as well as any spoofed packets which originate in the local network:
+
+[source]
+----
+antispoof for $ext_if
+antispoof for $int_if
+----
+
+[[_pftut_unrouteables]]
+==== Handling Non-Routable Addresses
+
+
+Even with a properly configured gateway to handle network address translation, one may have to compensate for other people's misconfigurations.
+A common misconfiguration is to let traffic with non-routable addresses out to the Internet.
+Since traffic from non-routeable addresses can play a part in several [acronym]``DoS`` attack techniques, consider explicitly blocking traffic from non-routeable addresses from entering the network through the external interface.
+
+In this example, a macro containing non-routable addresses is defined, then used in blocking rules.
+Traffic to and from these addresses is quietly dropped on the gateway's external interface.
+
+[source]
+----
+martians = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, \
+	      10.0.0.0/8, 169.254.0.0/16, 192.0.2.0/24, \
+	      0.0.0.0/8, 240.0.0.0/4 }"
+
+block drop in quick on $ext_if from $martians to any
+block drop out quick on $ext_if from any to $martians
+----
+
+=== Enabling ALTQ
+
+
+On FreeBSD, [app]``ALTQ`` can be used with [app]``PF`` to provide Quality of Service ([acronym]``QOS``).  Once [app]``ALTQ`` is enabled, queues can be defined in the ruleset which determine the processing priority of outbound packets.
+
+Before enabling [app]``ALTQ``, refer to  {{< manpage "altq" "4" >}}
+ to determine if the drivers for the network cards installed on the system support it.
+
+[app]``ALTQ`` is not available as a loadable kernel module.
+If the system's interfaces support [app]``ALTQ``, create a custom kernel using the instructions in <<_kernelconfig>>.
+The following kernel options are available.
+The first is needed to enable [app]``ALTQ``.
+At least one of the other options is necessary to specify the queueing scheduler algorithm:
+
+[source]
+----
+options         ALTQ
+options         ALTQ_CBQ        # Class Based Queuing (CBQ)
+options         ALTQ_RED        # Random Early Detection (RED)
+options         ALTQ_RIO        # RED In/Out
+options         ALTQ_HFSC       # Hierarchical Packet Scheduler (HFSC)
+options         ALTQ_PRIQ       # Priority Queuing (PRIQ)
+----
+
+
+The following scheduler algorithms are available:
+
+CBQ::
+Class Based Queuing ([acronym]``CBQ``) is used to divide a connection's bandwidth into different classes or queues to prioritize traffic based on filter rules.
+
+RED::
+Random Early Detection ([acronym]``RED``) is used to avoid network congestion by measuring the length of the queue and comparing it to the minimum and maximum thresholds for the queue.
+When the queue is over the maximum, all new packets are randomly dropped.
+
+RIO::
+In Random Early Detection In and Out ([acronym]``RIO``) mode, [acronym]``RED``	      maintains multiple average queue lengths and multiple threshold values, one for each [acronym]``QOS`` level.
+
+HFSC::
+Hierarchical Fair Service Curve Packet Scheduler ([acronym]``HFSC``) is described in http://www-2.cs.cmu.edu/~hzhang/HFSC/main.html.
+
+PRIQ::
+Priority Queuing ([acronym]``PRIQ``) always passes traffic that is in a higher queue first.
+
+
+More information about the scheduling algorithms and example rulesets are available at the https://web.archive.org/web/20151109213426/http://www.openbsd.org/faq/pf/queueing.html[OpenBSD's web archive].
+
+[[_firewalls_ipfw]]
+== IPFW
+
+[app]``
+IPFW`` is a stateful firewall written for FreeBSD which supports both [acronym]``IPv4`` and [acronym]``IPv6``.
+It is comprised of several components: the kernel firewall filter rule processor and its integrated packet accounting facility, the logging facility, [acronym]``NAT``, the  {{< manpage "dummynet" "4" >}}
+ traffic shaper, a forward facility, a bridge facility, and an ipstealth facility.
+
+FreeBSD provides a sample ruleset in [path]``/etc/rc.firewall``
+ which defines several firewall types for common scenarios to assist novice users in generating an appropriate ruleset. [app]``IPFW`` provides a powerful syntax which advanced users can use to craft customized rulesets that meet the security requirements of a given environment.
+
+This section describes how to enable [app]``IPFW``, provides an overview of its rule syntax, and demonstrates several rulesets for common configuration scenarios.
+
+[[_firewalls_ipfw_enable]]
+=== Enabling IPFW
+
+(((IPFW,enabling)))
+
+[app]``
+IPFW`` is included in the basic FreeBSD install as a kernel loadable module, meaning that a custom kernel is not needed in order to enable [app]``IPFW``.
+
+For those users who wish to statically compile [app]``IPFW`` support into a custom kernel, see <<_firewalls_ipfw_kernelconfig>>.
+
+To configure the system to enable [app]``IPFW`` at boot time, add `firewall_enable="YES"` to [path]``/etc/rc.conf``
+:
+
+----
+# sysrc firewall_enable="YES"
+----
+
+
+To use one of the default firewall types provided by FreeBSD, add another line which specifies the type:
+
+----
+# sysrc firewall_type="open"
+----
+
+
+The available types are:
+
+* ``open``: passes all traffic.
+* ``client``: protects only this machine.
+* ``simple``: protects the whole network.
+* ``closed``: entirely disables IP traffic except for the loopback interface.
+* ``workstation``: protects only this machine using stateful rules.
+* ``UNKNOWN``: disables the loading of firewall rules.
+* [path]``filename`` : full path of the file containing the firewall ruleset.
+
+
+If `firewall_type` is set to either `client` or ``simple``, modify the default rules found in [path]``/etc/rc.firewall``
+ to fit the configuration of the system.
+
+Note that the `filename` type is used to load a custom ruleset.
+
+An alternate way to load a custom ruleset is to set the `firewall_script` variable to the absolute path of an _executable script_ that includes [app]``IPFW`` commands.
+The examples used in this section assume that the `firewall_script` is set to [path]``/etc/ipfw.rules``
+:
+
+----
+# sysrc firewall_script="/etc/ipfw.rules"
+----
+
+
+To enable logging through  {{< manpage "syslogd" "8" >}}
+, include this line:
+
+----
+# sysrc firewall_logging="YES"
+----
+
+[WARNING]
+====
+Only firewall rules with the [option]``log`` option will be logged.
+The default rules do not include this option and it must be manually added.
+Therefor it is advisable that the default ruleset is edited for logging.
+In addition, log rotation may be desired if the logs are stored in a separate file.
+====
+
+
+There is no [path]``/etc/rc.conf``
+ variable to set logging limits.
+To limit the number of times a rule is logged per connection attempt, specify the number using this line in [path]``/etc/sysctl.conf``
+:
+
+----
+# echo "net.inet.ip.fw.verbose_limit=5" >> /etc/sysctl.conf
+----
+
+
+To enable logging through a dedicated interface named ``ipfw0``, add this line to [path]``/etc/rc.conf``
+ instead:
+
+----
+# sysrc firewall_logif="YES"
+----
+
+
+Then use [app]``tcpdump`` to see what is being logged:
+
+----
+# tcpdump -t -n -i ipfw0
+----
+
+[TIP]
+====
+There is no overhead due to logging unless [app]``tcpdump`` is attached.
+====
+
+
+After saving the needed edits, start the firewall.
+To enable logging limits now, also set the [command]``sysctl`` value specified above:
+
+----
+# service ipfw start
+# sysctl net.inet.ip.fw.verbose_limit=5
+----
+
+[[_firewalls_ipfw_rules]]
+=== IPFW Rule Syntax
+
+
+When a packet enters the [app]``IPFW``	firewall, it is compared against the first rule in the ruleset and progresses one rule at a time, moving from top to bottom in sequence.
+When the packet matches the selection parameters of a rule, the rule's action is executed and the search of the ruleset terminates for that packet.
+This is referred to as "`first match wins`"
+.
+If the packet does not match any of the rules, it gets caught by the mandatory [app]``IPFW`` default rule number 65535, which denies all packets and silently discards them.
+However, if the packet matches a rule that contains the ``count``, ``skipto``, or `tee` keywords, the search continues.
+Refer to  {{< manpage "ipfw" "8" >}}
+ for details on how these keywords affect rule processing.
+
+(((IPFW,rule syntax)))
+
+
+When creating an [app]``IPFW`` rule, keywords must be written in the following order.
+Some keywords are mandatory while other keywords are optional.
+The words shown in uppercase represent a variable and the words shown in lowercase must precede the variable that follows it.
+The `\#` symbol is used to mark the start of a comment and may appear at the end of a rule or on its own line.
+Blank lines are ignored.
+
+[replaceable]``CMD RULE_NUMBER set SET_NUMBER ACTION log
+	  LOG_AMOUNT PROTO from SRC SRC_PORT to DST DST_PORT
+	  OPTIONS``
+
+This section provides an overview of these keywords and their options.
+It is not an exhaustive list of every possible option.
+Refer to  {{< manpage "ipfw" "8" >}}
+ for a complete description of the rule syntax that can be used when creating [app]``IPFW`` rules.
+
+CMD::
+Every rule must start with [parameter]``ipfw add``.
+
+RULE_NUMBER::
+Each rule is associated with a number from `1` to ``65534``.
+The number is used to indicate the order of rule processing.
+Multiple rules can have the same number, in which case they are applied according to the order in which they have been added.
+
+SET_NUMBER::
+Each rule is associated with a set number from `0` to ``31``.
+Sets can be individually disabled or enabled, making it possible to quickly add or delete a set of rules.
+If a SET_NUMBER is not specified, the rule will be added to set ``0``.
+
+ACTION::
+A rule can be associated with one of the following actions.
+The specified action will be executed when the packet matches the selection criterion of the rule.
++
+[parameter]``allow | accept | pass |
+permit``: these keywords are equivalent and allow packets that match the rule.
++
+[parameter]``check-state``: checks the packet against the dynamic state table.
+If a match is found, execute the action associated with the rule which generated this dynamic rule, otherwise move to the next rule.
+A `check-state` rule does not have selection criterion.
+If no `check-state` rule is present in the ruleset, the dynamic rules table is checked at the first `keep-state` or `limit` rule.
++
+[parameter]``count``: updates counters for all packets that match the rule.
+The search continues with the next rule.
++
+[parameter]``deny | drop``: either word silently discards packets that match this rule.
++
+Additional actions are available.
+Refer to  {{< manpage "ipfw" "8" >}}
+for details.
+
+LOG_AMOUNT::
+When a packet matches a rule with the `log` keyword, a message will be logged to  {{< manpage "syslogd" "8" >}}
+with a facility name of ``SECURITY``.
+Logging only occurs if the number of packets logged for that particular rule does not exceed a specified LOG_AMOUNT.
+If no LOG_AMOUNT is specified, the limit is taken from the value of [var]``net.inet.ip.fw.verbose_limit``.
+A value of zero removes the logging limit.
+Once the limit is reached, logging can be re-enabled by clearing the logging counter or the packet counter for that rule, using [command]``ipfw resetlog``.
++
+
+NOTE: Logging is done after all other packet matching conditions have been met, and before performing the final action on the packet.
+The administrator decides which rules to enable logging on.
++
+
+
+PROTO::
+This optional value can be used to specify any protocol name or number found in [path]``/etc/protocols``
+.
+
+SRC::
+The `from` keyword must be followed by the source address or a keyword that represents the source address.
+An address can be represented by ``any``, `me` (any address configured on an interface on this system), ``me6``, (any [acronym]``IPv6``	      address configured on an interface on this system), or `table` followed by the number of a lookup table which contains a list of addresses.
+When specifying an [acronym]``IP`` address, it can be optionally followed by its [acronym]``CIDR`` mask or subnet mask.
+For example, `1.2.3.4/25` or ``1.2.3.4:255.255.255.128``.
+
+SRC_PORT::
+An optional source port can be specified using the port number or name from [path]``/etc/services``
+.
+
+DST::
+The `to` keyword must be followed by the destination address or a keyword that represents the destination address.
+The same keywords and addresses described in the SRC section can be used to describe the destination.
+
+DST_PORT::
+An optional destination port can be specified using the port number or name from [path]``/etc/services``
+.
+
+OPTIONS::
+Several keywords can follow the source and destination.
+As the name suggests, OPTIONS are optional.
+Commonly used options include `in` or ``out``, which specify the direction of packet flow, `icmptypes` followed by the type of [acronym]``ICMP`` message, and ``keep-state``.
++
+When a [parameter]``keep-state`` rule is matched, the firewall will create a dynamic rule which matches bidirectional traffic between the source and destination addresses and ports using the same protocol.
++
+The dynamic rules facility is vulnerable to resource depletion from a SYN-flood attack which would open a huge number of dynamic rules.
+To counter this type of attack with  [app]``IPFW``, use ``limit``.
+This option limits the number of simultaneous sessions by checking the open dynamic rules, counting the number of times this rule and [acronym]``IP`` address combination occurred.
+If this count is greater than the value specified by ``limit``, the packet is discarded.
++
+Dozens of OPTIONS are available.
+Refer to  {{< manpage "ipfw" "8" >}}
+for a description of each available option.
+
+
+=== Example Ruleset
+
+
+This section demonstrates how to create an example stateful firewall ruleset script named [path]``/etc/ipfw.rules``
+.
+In this example, all connection rules use `in` or `out` to clarify the direction.
+They also use `via`[replaceable]``interface-name`` to specify the interface the packet is traveling over.
+
+[NOTE]
+====
+When first creating or testing a firewall ruleset, consider temporarily setting this tunable:
+
+[source]
+----
+net.inet.ip.fw.default_to_accept="1"
+----
+
+This sets the default policy of  {{< manpage "ipfw" "8" >}}
+ to be more permissive than the default ``deny ip from any to
+	    any``, making it slightly more difficult to get locked out of the system right after a reboot.
+====
+
+
+The firewall script begins by indicating that it is a Bourne shell script and flushes any existing rules.
+It then creates the `cmd` variable so that `ipfw add` does not have to be typed at the beginning of every rule.
+It also defines the `pif` variable which represents the name of the interface that is attached to the Internet.
+
+[source]
+----
+#!/bin/sh
+# Flush out the list before we begin.
+ipfw -q -f flush
+
+# Set rules command prefix
+cmd="ipfw -q add"
+pif="dc0"     # interface name of NIC attached to Internet
+----
+
+
+The first two rules allow all traffic on the trusted internal interface and on the loopback interface:
+
+[source]
+----
+# Change xl0 to LAN NIC interface name
+$cmd 00005 allow all from any to any via xl0
+
+# No restrictions on Loopback Interface
+$cmd 00010 allow all from any to any via lo0
+----
+
+
+The next rule allows the packet through if it matches an existing entry in the dynamic rules table:
+
+[source]
+----
+$cmd 00101 check-state
+----
+
+
+The next set of rules defines which stateful connections internal systems can create to hosts on the Internet:
+
+[source]
+----
+# Allow access to public DNS
+# Replace x.x.x.x with the IP address of a public DNS server
+# and repeat for each DNS server in /etc/resolv.conf
+$cmd 00110 allow tcp from any to x.x.x.x 53 out via $pif setup keep-state
+$cmd 00111 allow udp from any to x.x.x.x 53 out via $pif keep-state
+
+# Allow access to ISP's DHCP server for cable/DSL configurations.
+# Use the first rule and check log for IP address.
+# Then, uncomment the second rule, input the IP address, and delete the first rule
+$cmd 00120 allow log udp from any to any 67 out via $pif keep-state
+#$cmd 00120 allow udp from any to x.x.x.x 67 out via $pif keep-state
+
+# Allow outbound HTTP and HTTPS connections
+$cmd 00200 allow tcp from any to any 80 out via $pif setup keep-state
+$cmd 00220 allow tcp from any to any 443 out via $pif setup keep-state
+
+# Allow outbound email connections
+$cmd 00230 allow tcp from any to any 25 out via $pif setup keep-state
+$cmd 00231 allow tcp from any to any 110 out via $pif setup keep-state
+
+# Allow outbound ping
+$cmd 00250 allow icmp from any to any out via $pif keep-state
+
+# Allow outbound NTP
+$cmd 00260 allow udp from any to any 123 out via $pif keep-state
+
+# Allow outbound SSH
+$cmd 00280 allow tcp from any to any 22 out via $pif setup keep-state
+
+# deny and log all other outbound connections
+$cmd 00299 deny log all from any to any out via $pif
+----
+
+
+The next set of rules controls connections from Internet hosts to the internal network.
+It starts by denying packets typically associated with attacks and then explicitly allows specific types of connections.
+All the authorized services that originate from the Internet use `limit`	to prevent flooding.
+
+[source]
+----
+# Deny all inbound traffic from non-routable reserved address spaces
+$cmd 00300 deny all from 192.168.0.0/16 to any in via $pif     #RFC 1918 private IP
+$cmd 00301 deny all from 172.16.0.0/12 to any in via $pif      #RFC 1918 private IP
+$cmd 00302 deny all from 10.0.0.0/8 to any in via $pif         #RFC 1918 private IP
+$cmd 00303 deny all from 127.0.0.0/8 to any in via $pif        #loopback
+$cmd 00304 deny all from 0.0.0.0/8 to any in via $pif          #loopback
+$cmd 00305 deny all from 169.254.0.0/16 to any in via $pif     #DHCP auto-config
+$cmd 00306 deny all from 192.0.2.0/24 to any in via $pif       #reserved for docs
+$cmd 00307 deny all from 204.152.64.0/23 to any in via $pif    #Sun cluster interconnect
+$cmd 00308 deny all from 224.0.0.0/3 to any in via $pif        #Class D & E multicast
+
+# Deny public pings
+$cmd 00310 deny icmp from any to any in via $pif
+
+# Deny ident
+$cmd 00315 deny tcp from any to any 113 in via $pif
+
+# Deny all Netbios services.
+$cmd 00320 deny tcp from any to any 137 in via $pif
+$cmd 00321 deny tcp from any to any 138 in via $pif
+$cmd 00322 deny tcp from any to any 139 in via $pif
+$cmd 00323 deny tcp from any to any 81 in via $pif
+
+# Deny fragments
+$cmd 00330 deny all from any to any frag in via $pif
+
+# Deny ACK packets that did not match the dynamic rule table
+$cmd 00332 deny tcp from any to any established in via $pif
+
+# Allow traffic from ISP's DHCP server.
+# Replace x.x.x.x with the same IP address used in rule 00120.
+#$cmd 00360 allow udp from any to x.x.x.x 67 in via $pif keep-state
+
+# Allow HTTP connections to internal web server
+$cmd 00400 allow tcp from any to me 80 in via $pif setup limit src-addr 2
+
+# Allow inbound SSH connections
+$cmd 00410 allow tcp from any to me 22 in via $pif setup limit src-addr 2
+
+# Reject and log all other incoming connections
+$cmd 00499 deny log all from any to any in via $pif
+----
+
+
+The last rule logs all packets that do not match any of the rules in the ruleset:
+
+[source]
+----
+# Everything else is denied and logged
+$cmd 00999 deny log all from any to any
+----
+
+[[_network_natd]]
+=== Configuring NAT
+= Configuring NAT
+:imagesdir: ./images
+Chern Lee
+
+
+FreeBSD's built-in [acronym]``NAT`` daemon,  {{< manpage "natd" "8" >}}
+, works in conjunction with [app]``IPFW`` to provide network address translation.
+This can be used to provide an Internet Connection Sharing solution so that several internal computers can connect to the Internet using a single [acronym]``IP`` address.
+
+To do this, the FreeBSD machine connected to the Internet must act as a gateway.
+This system must have two [acronym]``NIC``s, where one is connected to the Internet and the other is connected to the internal [acronym]``LAN``.
+Each machine connected to the [acronym]``LAN`` should be assigned an [acronym]``IP`` address in the private network space, as defined by https://www.ietf.org/rfc/rfc1918.txt[RFC
+	  1918], and have the default gateway set to the  {{< manpage "natd" "8" >}}
+ system's internal [acronym]``IP``	address.
+
+Some additional configuration is needed in order to activate the [acronym]``NAT`` function of [app]``IPFW``.
+If the system has a custom kernel, the kernel configuration file needs to include `option IPDIVERT` along with the other `IPFIREWALL` options described in <<_firewalls_ipfw_enable>>.
+
+To enable [acronym]``NAT`` support at boot time, the following must be in [path]``/etc/rc.conf``
+:
+
+[source]
+----
+gateway_enable="YES"		# enables the gateway
+natd_enable="YES"		# enables NAT
+natd_interface="rl0"		# specify interface name of NIC attached to Internet
+natd_flags="-dynamic -m"	# -m = preserve port numbers; additional options are listed in natd8
+----
+
+[NOTE]
+====
+It is also possible to specify a configuration file which contains the options to pass to  {{< manpage "natd" "8" >}}
+:
+
+[source]
+----
+natd_flags="-f /etc/natd.conf"
+----
+
+The specified file must contain a list of configuration options, one per line.
+For example:
+
+[source]
+----
+redirect_port tcp 192.168.0.2:6667 6667
+redirect_port tcp 192.168.0.3:80 80
+----
+
+For more information about this configuration file, consult  {{< manpage "natd" "8" >}}
+.
+====
+
+
+Next, add the [acronym]``NAT`` rules to the firewall ruleset.
+When the rulest contains stateful rules, the positioning of the [acronym]``NAT`` rules is critical and the `skipto` action is used.
+The `skipto` action requires a rule number so that it knows which rule to jump to.
+
+The following example builds upon the firewall ruleset shown in the previous section.
+It adds some additional entries and modifies some existing rules in order to configure the firewall for [acronym]``NAT``.
+It starts by adding some additional variables which represent the rule number to skip to, the `keep-state` option, and a list of [acronym]``TCP`` ports which will be used to reduce the number of rules:
+
+[source]
+----
+#!/bin/sh
+ipfw -q -f flush
+cmd="ipfw -q add"
+skip="skipto 500"
+pif=dc0
+ks="keep-state"
+good_tcpo="22,25,37,53,80,443,110"
+----
+
+
+The inbound [acronym]``NAT`` rule is inserted _after_ the two rules which allow all traffic on the trusted internal interface and on the loopback interface and _before_ the `check-state` rule.
+It is important that the rule number selected for this [acronym]``NAT`` rule, in this example ``100``, is higher than the first two rules and lower than the `check-state`	rule:
+
+[source]
+----
+$cmd 005 allow all from any to any via xl0  # exclude LAN traffic
+$cmd 010 allow all from any to any via lo0  # exclude loopback traffic
+$cmd 100 divert natd ip from any to any in via $pif # NAT any inbound packets
+# Allow the packet through if it has an existing entry in the dynamic rules table
+$cmd 101 check-state
+----
+
+
+The outbound rules are modified to replace the `allow` action with the `$skip` variable, indicating that rule processing will continue at rule ``500``.
+The seven `tcp` rules have been replaced by rule `125` as the `$good_tcpo` variable contains the seven allowed outbound ports.
+
+[source]
+----
+# Authorized outbound packets
+$cmd 120 $skip udp from any to x.x.x.x 53 out via $pif $ks
+$cmd 121 $skip udp from any to x.x.x.x 67 out via $pif $ks
+$cmd 125 $skip tcp from any to any $good_tcpo out via $pif setup $ks
+$cmd 130 $skip icmp from any to any out via $pif $ks
+----
+
+
+The inbound rules remain the same, except for the very last rule which removes the `via $pif` in order to catch both inbound and outbound rules.
+The [acronym]``NAT`` rule must follow this last outbound rule, must have a higher number than that last rule, and the rule number must be referenced by the `skipto` action.
+In this ruleset, rule number `500` diverts all packets which match the outbound rules to  {{< manpage "natd" "8" >}}
+ for [acronym]``NAT`` processing.
+The next rule allows any packet which has undergone [acronym]``NAT`` processing to pass.
+
+[source]
+----
+$cmd 499 deny log all from any to any
+$cmd 500 divert natd ip from any to any out via $pif # skipto location for outbound stateful rules
+$cmd 510 allow ip from any to any
+----
+
+
+In this example, rules ``100``, ``101``, ``125``, ``500``, and `510` control the address translation of the outbound and inbound packets so that the entries in the dynamic state table always register the private [acronym]``LAN``[acronym]``IP``	address.
+
+Consider an internal web browser which initializes a new outbound [acronym]``HTTP`` session over port 80.
+When the first outbound packet enters the firewall, it does not match rule `100` because it is headed out rather than in.
+It passes rule `101` because this is the first packet and it has not been posted to the dynamic state table yet.
+The packet finally matches rule `125` as it is outbound on an allowed port and has a source [acronym]``IP`` address from the internal [acronym]``LAN``.
+On matching this rule, two actions take place.
+First, the `keep-state`	action adds an entry to the dynamic state table and the specified action, ``skipto rule 500``, is executed.
+Next, the packet undergoes [acronym]``NAT``	and is sent out to the Internet.
+This packet makes its way to the destination web server, where a response packet is generated and sent back.
+This new packet enters the top of the ruleset.
+It matches rule `100` and has its destination [acronym]``IP`` address mapped back to the original internal address.
+It then is processed by the `check-state` rule, is found in the table as an existing session, and is released to the [acronym]``LAN``.
+
+On the inbound side, the ruleset has to deny bad packets and allow only authorized services.
+A packet which matches an inbound rule is posted to the dynamic state table and the packet is released to the [acronym]``LAN``.
+The packet generated as a response is recognized by the `check-state` rule as belonging to an existing session.
+It is then sent to rule `500` to undergo [acronym]``NAT`` before being released to the outbound interface.
+
+==== Port Redirection
+
+
+The drawback with  {{< manpage "natd" "8" >}}
+ is that the [acronym]``LAN`` clients are not accessible from the Internet.
+Clients on the [acronym]``LAN`` can make outgoing connections to the world but cannot receive incoming ones.
+This presents a problem if trying to run Internet services on one of the [acronym]``LAN``	  client machines.
+A simple way around this is to redirect selected Internet ports on the  {{< manpage "natd" "8" >}}
+ machine to a [acronym]``LAN`` client.
+
+For example, an [acronym]``IRC`` server runs on client [systemitem]``A``
+ and a web server runs on client [systemitem]``B``
+.
+For this to work properly, connections received on ports 6667 ([acronym]``IRC``) and 80 ([acronym]``HTTP``) must be redirected to the respective machines.
+
+The syntax for [option]``-redirect_port`` is as follows:
+
+[source]
+----
+     -redirect_port proto targetIP:targetPORT[-targetPORT]
+                 [aliasIP:]aliasPORT[-aliasPORT]
+                 [remoteIP[:remotePORT[-remotePORT]]]
+----
+
+
+In the above example, the argument should be:
+
+[source]
+----
+    -redirect_port tcp 192.168.0.2:6667 6667
+    -redirect_port tcp 192.168.0.3:80 80
+----
+
+
+This redirects the proper [acronym]``TCP`` ports to the [acronym]``LAN`` client machines.
+
+Port ranges over individual ports can be indicated with [option]``-redirect_port``.
+For example, [replaceable]``tcp 192.168.0.2:2000-3000
+	    2000-3000`` would redirect all connections received on ports 2000 to 3000 to ports 2000 to 3000 on client [systemitem]``A``
+.
+
+These options can be used when directly running  {{< manpage "natd" "8" >}}
+, placed within the `natd_flags=""` option in [path]``/etc/rc.conf``
+, or passed via a configuration file.
+
+For further configuration options, consult  {{< manpage "natd" "8" >}}
+.
+
+==== Address Redirection
+
+(((address redirection)))
+
+
+Address redirection is useful if more than one [acronym]``IP`` address is available.
+Each [acronym]``LAN`` client can be assigned its own external [acronym]``IP`` address by  {{< manpage "natd" "8" >}}
+, which will then rewrite outgoing packets from the [acronym]``LAN`` clients with the proper external [acronym]``IP`` address and redirects all traffic incoming on that particular [acronym]``IP`` address back to the specific [acronym]``LAN`` client.
+This is also known as static [acronym]``NAT``.
+For example, if [acronym]``IP`` addresses [ipaddress]``128.1.1.1``
+, [ipaddress]``128.1.1.2``
+, and [ipaddress]``128.1.1.3``
+ are available, [ipaddress]``128.1.1.1``
+ can be used as the  {{< manpage "natd" "8" >}}
+ machine's external [acronym]``IP`` address, while [ipaddress]``128.1.1.2``
+ and [ipaddress]``128.1.1.3``
+ are forwarded back to [acronym]``LAN`` clients [systemitem]``A``
+ and [systemitem]``B``
+.
+
+The [option]``-redirect_address`` syntax is as follows:
+
+[source]
+----
+-redirect_address localIP publicIP
+----
+
+[cols="1,1", frame="none"]
+|===
+
+|
+localIP
+|The internal [acronym]``IP`` address of
+		  the [acronym]``LAN`` client.
+
+|publicIP
+|The external [acronym]``IP`` address
+		  corresponding to the [acronym]``LAN``
+		  client.
+|===
+
+
+In the example, this argument would read:
+
+[source]
+----
+-redirect_address 192.168.0.2 128.1.1.2
+-redirect_address 192.168.0.3 128.1.1.3
+----
+
+
+Like [option]``-redirect_port``, these arguments are placed within the `natd_flags=""`	  option of [path]``/etc/rc.conf``
+, or passed via a configuration file.
+With address redirection, there is no need for port redirection since all data received on a particular [acronym]``IP`` address is redirected.
+
+The external [acronym]``IP`` addresses on the  {{< manpage "natd" "8" >}}
+ machine must be active and aliased to the external interface.
+Refer to  {{< manpage "rc.conf" "5" >}}
+ for details.
+
+[[_firewalls_ipfw_cmd]]
+=== The IPFW Command
+
+(((ipfw)))
+
+[command]``
+ipfw`` can be used to make manual, single rule additions or deletions to the active firewall while it is running.
+The problem with using this method is that all the changes are lost when the system reboots.
+It is recommended to instead write all the rules in a file and to use that file to load the rules at boot time and to replace the currently running firewall rules whenever that file changes.
+
+[command]``ipfw`` is a useful way to display the running firewall rules to the console screen.
+The [app]``IPFW`` accounting facility dynamically creates a counter for each rule that counts each packet that matches the rule.
+During the process of testing a rule, listing the rule with its counter is one way to determine if the rule is functioning as expected.
+
+To list all the running rules in sequence:
+
+----
+# ipfw list
+----
+
+
+To list all the running rules with a time stamp of when the last time the rule was matched:
+
+----
+# ipfw -t list
+----
+
+
+The next example lists accounting information and the packet count for matched rules along with the rules themselves.
+The first column is the rule number, followed by the number of matched packets and bytes, followed by the rule itself.
+
+----
+# ipfw -a list
+----
+
+
+To list dynamic rules in addition to static rules:
+
+----
+# ipfw -d list
+----
+
+
+To also show the expired dynamic rules:
+
+----
+# ipfw -d -e list
+----
+
+
+To zero the counters:
+
+----
+# ipfw zero
+----
+
+
+To zero the counters for just the rule with number [replaceable]``NUM``:
+
+----
+# ipfw zero NUM
+----
+
+==== Logging Firewall Messages
+
+(((IPFW,logging)))
+
+
+Even with the logging facility enabled, [app]``IPFW`` will not generate any rule logging on its own.
+The firewall administrator decides which rules in the ruleset will be logged, and adds the `log` keyword to those rules.
+Normally only deny rules are logged.
+It is customary to duplicate the "`ipfw default deny everything`"
+ rule with the `log` keyword included as the last rule in the ruleset.
+This way, it is possible to see all the packets that did not match any of the rules in the ruleset.
+
+Logging is a two edged sword.
+If one is not careful, an over abundance of log data or a DoS attack can fill the disk with log files.
+Log messages are not only written to [app]``syslogd``, but also are displayed on the root console screen and soon become annoying.
+
+The `IPFIREWALL_VERBOSE_LIMIT=5`	  kernel option limits the number of consecutive messages sent to  {{< manpage "syslogd" "8" >}}
+, concerning the packet matching of a given rule.
+When this option is enabled in the kernel, the number of consecutive messages concerning a particular rule is capped at the number specified.
+There is nothing to be gained from 200 identical log messages.
+With this option set to five, five consecutive messages concerning a particular rule would be logged to [app]``syslogd`` and the remainder identical consecutive messages would be counted and posted to [app]``syslogd``	  with a phrase like the following:
+
+[source]
+----
+last message repeated 45 times
+----
+
+
+All logged packets messages are written by default to [path]``/var/log/security``
+, which is defined in [path]``/etc/syslog.conf``
+.
+
+[[_firewalls_ipfw_rules_script]]
+==== Building a Rule Script
+
+
+Most experienced [app]``IPFW`` users create a file containing the rules and code them in a manner compatible with running them as a script.
+The major benefit of doing this is the firewall rules can be refreshed in mass without the need of rebooting the system to activate them.
+This method is convenient in testing new rules as the procedure can be executed as many times as needed.
+Being a script, symbolic substitution can be used for frequently used values to be substituted into multiple rules.
+
+This example script is compatible with the syntax used by the  {{< manpage "sh" "1" >}}
+,  {{< manpage "csh" "1" >}}
+, and  {{< manpage "tcsh" "1" >}}
+ shells.
+Symbolic substitution fields are prefixed with a dollar sign ($).  Symbolic fields do not have the $ prefix.
+The value to populate the symbolic field must be enclosed in double quotes ("").
+
+Start the rules file like this:
+
+[source]
+----
+############### start of example ipfw rules script #############
+#
+ipfw -q -f flush       # Delete all rules
+# Set defaults
+oif="tun0"             # out interface
+odns="192.0.2.11"      # ISP's DNS server IP address
+cmd="ipfw -q add "     # build rule prefix
+ks="keep-state"        # just too lazy to key this each time
+$cmd 00500 check-state
+$cmd 00502 deny all from any to any frag
+$cmd 00501 deny tcp from any to any established
+$cmd 00600 allow tcp from any to any 80 out via $oif setup $ks
+$cmd 00610 allow tcp from any to $odns 53 out via $oif setup $ks
+$cmd 00611 allow udp from any to $odns 53 out via $oif $ks
+################### End of example ipfw rules script ############
+----
+
+
+The rules are not important as the focus of this example is how the symbolic substitution fields are populated.
+
+If the above example was in [path]``/etc/ipfw.rules``
+, the rules could be reloaded by the following command:
+
+----
+# sh /etc/ipfw.rules
+----
+
+[path]``/etc/ipfw.rules``
+ can be located anywhere and the file can have any name.
+
+The same thing could be accomplished by running these commands by hand:
+
+----
+# ipfw -q -f flush
+# ipfw -q add check-state
+# ipfw -q add deny all from any to any frag
+# ipfw -q add deny tcp from any to any established
+# ipfw -q add allow tcp from any to any 80 out via tun0 setup keep-state
+# ipfw -q add allow tcp from any to 192.0.2.11 53 out via tun0 setup keep-state
+# ipfw -q add 00611 allow udp from any to 192.0.2.11 53 out via tun0 keep-state
+----
+
+[[_firewalls_ipfw_kernelconfig]]
+=== IPFW Kernel Options
+
+(((kernel options,IPFIREWALL_VERBOSE)))
+
+(((IPFW,kernel options)))
+
+
+In order to statically compile [app]``IPFW`` support into a custom kernel, refer to the instructions in <<_kernelconfig>>.
+The following options are available for the custom kernel configuration file:
+
+[source]
+----
+options    IPFIREWALL			# enables IPFW
+options    IPFIREWALL_VERBOSE		# enables logging for rules with log keyword to syslogd(8)
+options    IPFIREWALL_VERBOSE_LIMIT=5	# limits number of logged packets per-entry
+options    IPFIREWALL_DEFAULT_TO_ACCEPT # sets default policy to pass what is not explicitly denied
+options    IPFIREWALL_NAT		# enables in-kernel NAT support
+options    IPFIREWALL_NAT64		# enables in-kernel NAT64 support
+options    IPFIREWALL_NPTV6		# enables in-kernel IPv6 NPT support
+options    IPFIREWALL_PMOD		# enables protocols modification module support
+options    IPDIVERT			# enables NAT through natd(8)
+----
+
+[NOTE]
+====
+[app]``IPFW`` can be loaded as a kernel module: options above are built by default as modules or can be set at runtime using tunables.
+====
+
+[[_firewalls_ipf]]
+== IPFILTER (IPF)
+
+[app]``
+IPFILTER``, also known as [app]``IPF``, is a cross-platform, open source firewall which has been ported to several operating systems, including FreeBSD, NetBSD, OpenBSD, and Solaris(TM)
+.
+
+[app]``IPFILTER`` is a kernel-side firewall and [acronym]``NAT`` mechanism that can be controlled and monitored by userland programs.
+Firewall rules can be set or deleted using [app]``ipf``, [acronym]``NAT`` rules can be set or deleted using [app]``ipnat``, run-time statistics for the kernel parts of [app]``IPFILTER`` can be printed using [app]``ipfstat``, and [app]``ipmon`` can be used to log [app]``IPFILTER`` actions to the system log files.
+
+[app]``IPF`` was originally written using a rule processing logic of "`the last matching rule
+	wins`"
+ and only used stateless rules.
+Since then, [app]``IPF`` has been enhanced to include the `quick` and `keep state` options.
+
+The [app]``IPF`` FAQ is at http://www.phildev.net/ipf/index.html.
+A searchable archive of the IPFilter mailing list is available at http://marc.info/?l=ipfilter.
+
+This section of the Handbook focuses on [app]``IPF`` as it pertains to FreeBSD.
+It provides examples of rules that contain the `quick` and `keep state` options.
+
+=== Enabling IPF
+
+(((IPFILTER,enabling)))
+
+[app]``
+IPF`` is included in the basic FreeBSD install as a kernel loadable module, meaning that a custom kernel is not needed in order to enable [app]``IPF``.
+
+(((kernel options,IPFILTER_LOG)))
+
+(((IPFILTER,kernel options)))
+
+
+For users who prefer to statically compile [app]``IPF`` support into a custom kernel, refer to the instructions in <<_kernelconfig>>.
+The following kernel options are available:
+
+[source]
+----
+options IPFILTER
+options IPFILTER_LOG
+options IPFILTER_LOOKUP
+options IPFILTER_DEFAULT_BLOCK
+----
+
+
+where `options IPFILTER` enables support for [app]``IPFILTER``, `options IPFILTER_LOG` enables [app]``IPF`` logging using the [path]``ipl``
+ packet logging pseudo-device for every rule that has the `log` keyword, `IPFILTER_LOOKUP` enables [acronym]``IP`` pools in order to speed up [acronym]``IP`` lookups, and `options
+	  IPFILTER_DEFAULT_BLOCK` changes the default behavior so that any packet not matching a firewall `pass` rule gets blocked.
+
+To configure the system to enable [app]``IPF`` at boot time, add the following entries to [path]``/etc/rc.conf``
+.
+These entries will also enable logging and ``default pass
+	  all``.
+To change the default policy to `block all` without  compiling a custom kernel, remember to add a `block all` rule at the end of the ruleset.
+
+[source]
+----
+ipfilter_enable="YES"             # Start ipf firewall
+ipfilter_rules="/etc/ipf.rules"   # loads rules definition text file
+ipmon_enable="YES"                # Start IP monitor log
+ipmon_flags="-Ds"                 # D = start as daemon
+                                  # s = log to syslog
+                                  # v = log tcp window, ack, seq
+                                  # n = map IP & port to names
+----
+
+
+If [acronym]``NAT`` functionality is needed, also add these lines:
+
+[source]
+----
+gateway_enable="YES"              # Enable as LAN gateway
+ipnat_enable="YES"                # Start ipnat function
+ipnat_rules="/etc/ipnat.rules"    # rules definition file for ipnat
+----
+
+
+Then, to start [app]``IPF`` now:
+
+[source]
+----
+# service ipfilter start
+----
+
+
+To load the firewall rules, specify the name of the ruleset file using [command]``ipf``.
+The following command can be used to replace the currently running firewall rules:
+
+----
+# ipf -Fa -f /etc/ipf.rules
+----
+
+
+where [option]``-Fa`` flushes all the internal rules tables and [option]``-f`` specifies the file containing the rules to load.
+
+This provides the ability to make changes to a custom ruleset and update the running firewall with a fresh copy of the rules without having to reboot the system.
+This method is convenient for testing new rules as the procedure can be executed as many times as needed.
+
+Refer to  {{< manpage "ipf" "8" >}}
+ for details on the other flags available with this command.
+
+=== IPF Rule Syntax
+
+
+This section describes the [app]``IPF``	rule syntax used to create stateful rules.
+When creating rules, keep in mind that unless the `quick`	keyword appears in a rule, every rule is read in order, with the _last  matching rule_ being the one that is applied.
+This means that even if the first rule to match a packet is a ``pass``, if there is a later matching rule that is a ``block``, the packet will be dropped.
+Sample rulesets can be found in [path]``/usr/share/examples/ipfilter``
+.
+
+When creating rules, a `\#` character is used to mark the start of a comment and may appear at the end of a rule, to explain that rule's function, or on its own line.
+Any blank lines are ignored.
+
+The keywords which are used in rules must be written in a specific order, from left to right.
+Some keywords are mandatory while others are optional.
+Some keywords have sub-options which may be keywords themselves and also include more sub-options.
+The keyword order is as follows, where the words shown in uppercase represent a variable and the words shown in lowercase must precede the variable that follows it:
+
+[replaceable]``ACTION DIRECTION OPTIONS proto PROTO_TYPE
+	  from SRC_ADDR SRC_PORT to DST_ADDR DST_PORT
+	  TCP_FLAG|ICMP_TYPE keep state STATE``
+
+This section describes each of these keywords and their options.
+It is not an exhaustive list of every possible option.
+Refer to  {{< manpage "ipf" "5" >}}
+ for a complete description of the rule syntax that can be used when creating [app]``IPF`` rules and examples for using each keyword.
+
+ACTION::
+The action keyword indicates what to do with the packet if it matches that rule.
+Every rule _must_ have an action.
+The following actions are recognized:
++
+``block``: drops the packet.
++
+``pass``: allows the packet.
++
+``log``: generates a log record.
++
+``count``: counts the number of packets and bytes which can provide an indication of how often a rule is used.
++
+``auth``: queues the packet for further processing by another program.
++
+``call``: provides access to functions built into [app]``IPF`` that allow more complex actions.
++
+``decapsulate``: removes any headers in order to process the contents of the packet.
+
+DIRECTION::
+Next, each rule must explicitly state the direction of traffic using one of these keywords:
++
+``in``: the rule is applied against an inbound packet.
++
+``out``: the rule is applied against an outbound packet.
++
+``all``: the rule applies to either direction.
++
+If the system has multiple interfaces, the interface can be specified along with the direction.
+An example would be ``in on fxp0``.
+
+OPTIONS::
+Options are optional.
+However, if multiple options are specified, they must be used in the order shown here.
++
+``log``: when performing the specified ACTION, the contents of the packet's headers will be written to the  {{< manpage "ipl" "4" >}}
+packet log pseudo-device.
++
+``quick``: if a packet matches this rule, the ACTION specified by the rule occurs and no further processing of any following rules will occur for this packet.
++
+``on``: must be followed by the interface name as displayed by  {{< manpage "ifconfig" "8" >}}
+.
+The rule will only match if the packet is going through the specified interface in the specified direction.
++
+When using the `log` keyword, the following qualifiers may be used in this order:
++
+``body``: indicates that the first 128 bytes of the packet contents will be logged after the headers.
++
+``first``:  if the `log` keyword is being used in conjunction with a `keep state` option, this option is recommended so that only the triggering packet is logged and not every packet which matches the stateful connection.
++
+Additional options are available to specify error return messages.
+Refer to   {{< manpage "ipf" "5" >}}
+for more details.
+
+PROTO_TYPE::
+The protocol type is optional.
+However, it is mandatory if the rule needs to specify a SRC_PORT or a DST_PORT as it defines the type of protocol.
+When specifying the type of protocol, use the `proto` keyword followed by either a protocol number or name from [path]``/etc/protocols``
+.
+Example protocol names include ``tcp``, ``udp``, or ``icmp``.
+If PROTO_TYPE is specified but no SRC_PORT or DST_PORT is specified, all port numbers for that protocol will match that rule.
+
+SRC_ADDR::
+The `from` keyword is mandatory and is followed by a keyword which represents the source of the packet.
+The source can be a hostname, an [acronym]``IP`` address followed by the [acronym]``CIDR`` mask, an address pool, or the keyword ``all``.
+Refer to  {{< manpage "ipf" "5" >}}
+for examples.
++
+There is no way to match ranges of [acronym]``IP`` addresses which do not express themselves easily using the dotted numeric form / mask-length notation.
+The [package]#net-mgmt/ipcalc#
+package or port may be used to ease the calculation of the [acronym]``CIDR`` mask.
+Additional information is available at the utility's web page: http://jodies.de/ipcalc.
+
+SRC_PORT::
+The port number of the source is optional.
+However, if it is used, it requires PROTO_TYPE to be first defined in the rule.
+The port number must also be preceded by the `proto` keyword.
++
+A number of different comparison operators are supported: `=` (equal to), `!=` (not equal to), `<` (less than), `>` (greater than), `<=` (less than or equal to), and `>=` (greater than or equal to).
++
+To specify port ranges, place the two port numbers between `<>` (less than and greater than ), `><` (greater than and less than ), or `:` (greater than or equal to and less than or equal to).
+
+DST_ADDR::
+The `to` keyword is mandatory and is followed by a keyword which represents the destination of the packet.
+Similar to SRC_ADDR, it can be a hostname, an  [acronym]``IP`` address followed by the [acronym]``CIDR`` mask, an address pool, or the keyword ``all``.
+
+DST_PORT::
+Similar to SRC_PORT, the port number of the destination is optional.
+However, if it is used, it requires PROTO_TYPE to be first defined in the rule.
+The port number must also be preceded by the `proto` keyword.
+
+TCP_FLAG|ICMP_TYPE::
+If `tcp` is specified as the PROTO_TYPE, flags can be specified as letters, where each letter represents one of the possible [acronym]``TCP`` flags used to determine the state of a connection.
+Possible values are: `S` (SYN), `A` (ACK), `P` (PSH), `F` (FIN), `U` (URG), `R` (RST), `C` (CWN), and `E` (ECN).
++
+If `icmp` is specified as the PROTO_TYPE, the [acronym]``ICMP`` type to match can be specified.
+Refer to  {{< manpage "ipf" "5" >}}
+for the allowable types.
+
+STATE::
+If a `pass` rule contains ``keep state``, [app]``IPF`` will add an entry to its dynamic state table and allow subsequent packets that match the connection. [app]``IPF`` can track state for [acronym]``TCP``, [acronym]``UDP``, and [acronym]``ICMP`` sessions.
+Any packet that [app]``IPF`` can be certain is part of an active session, even if it is a different protocol, will be allowed.
++
+In [app]``IPF``, packets destined to go out through the interface connected to the public Internet are first checked against the dynamic state table.
+If the packet matches the next expected packet comprising an active session conversation, it exits the firewall and the state of the session conversation flow is updated in the dynamic state table.
+Packets that do not belong to an already active session are checked against the outbound ruleset.
+Packets coming in from the interface connected to the public Internet are first checked against the dynamic state table.
+If the packet matches the next expected packet comprising an active session, it exits the firewall and the state of the session conversation flow is updated in the dynamic state table.
+Packets that do not belong to an already active session are checked against the inbound ruleset.
++
+Several keywords can be added after ``keep state``.
+If used, these keywords set various options that control stateful filtering, such as setting connection limits or connection age.
+Refer to  {{< manpage "ipf" "5" >}}
+for the list of available options and their descriptions.
+
+
+=== Example Ruleset
+
+
+This section demonstrates how to create an example ruleset which only allows services matching `pass` rules and blocks all others.
+
+FreeBSD uses the loopback interface ([path]``lo0``
+) and the [acronym]``IP``	address [ipaddress]``127.0.0.1``
+	for internal communication.
+The firewall ruleset must contain rules to allow free movement of these internally used packets:
+
+[source]
+----
+# no restrictions on loopback interface
+pass in quick on lo0 all
+pass out quick on lo0 all
+----
+
+
+The public interface connected to the Internet is used to authorize and control access of all outbound and inbound connections.
+If one or more interfaces are cabled to private networks, those internal interfaces may require rules to allow packets originating from the [acronym]``LAN`` to flow between the internal networks or to the interface attached to the Internet.
+The ruleset should be organized into three major sections: any trusted internal interfaces, outbound connections through the public interface, and inbound connections through the public interface.
+
+These two rules allow all traffic to pass through a trusted [acronym]``LAN`` interface named [path]``xl0``
+:
+
+[source]
+----
+# no restrictions on inside LAN interface for private network
+pass out quick on xl0 all
+pass in quick on xl0 all
+----
+
+
+The rules for the public interface's outbound and inbound sections should have the most frequently matched rules placed before less commonly matched rules, with the last rule in the section blocking and logging all packets for that interface and direction.
+
+This set of rules defines the outbound section of the public interface named [path]``dc0``
+.
+These rules keep state and identify the specific services that internal systems are authorized for public Internet access.
+All the rules use `quick` and specify the appropriate port numbers and, where applicable, destination addresses.
+
+[source]
+----
+# interface facing Internet (outbound)
+# Matches session start requests originating from or behind the
+# firewall, destined for the Internet.
+
+# Allow outbound access to public DNS servers.
+# Replace x.x.x. with address listed in /etc/resolv.conf.
+# Repeat for each DNS server.
+pass out quick on dc0 proto tcp from any to x.x.x. port = 53 flags S keep state
+pass out quick on dc0 proto udp from any to xxx port = 53 keep state
+
+# Allow access to ISP's specified DHCP server for cable or DSL networks.
+# Use the first rule, then check log for the IP address of DHCP server.
+# Then, uncomment the second rule, replace z.z.z.z with the IP address,
+# and comment out the first rule
+pass out log quick on dc0 proto udp from any to any port = 67 keep state
+#pass out quick on dc0 proto udp from any to z.z.z.z port = 67 keep state
+
+# Allow HTTP and HTTPS
+pass out quick on dc0 proto tcp from any to any port = 80 flags S keep state
+pass out quick on dc0 proto tcp from any to any port = 443 flags S keep state
+
+# Allow email
+pass out quick on dc0 proto tcp from any to any port = 110 flags S keep state
+pass out quick on dc0 proto tcp from any to any port = 25 flags S keep state
+
+# Allow NTP
+pass out quick on dc0 proto tcp from any to any port = 37 flags S keep state
+
+# Allow FTP
+pass out quick on dc0 proto tcp from any to any port = 21 flags S keep state
+
+# Allow SSH
+pass out quick on dc0 proto tcp from any to any port = 22 flags S keep state
+
+# Allow ping
+pass out quick on dc0 proto icmp from any to any icmp-type 8 keep state
+
+# Block and log everything else
+block out log first quick on dc0 all
+----
+
+
+This example of the rules in the inbound section of the public interface blocks all undesirable packets first.
+This reduces the number of packets that are logged by the last rule.
+
+[source]
+----
+# interface facing Internet (inbound)
+# Block all inbound traffic from non-routable or reserved address spaces
+block in quick on dc0 from 192.168.0.0/16 to any    #RFC 1918 private IP
+block in quick on dc0 from 172.16.0.0/12 to any     #RFC 1918 private IP
+block in quick on dc0 from 10.0.0.0/8 to any        #RFC 1918 private IP
+block in quick on dc0 from 127.0.0.0/8 to any       #loopback
+block in quick on dc0 from 0.0.0.0/8 to any         #loopback
+block in quick on dc0 from 169.254.0.0/16 to any    #DHCP auto-config
+block in quick on dc0 from 192.0.2.0/24 to any      #reserved for docs
+block in quick on dc0 from 204.152.64.0/23 to any   #Sun cluster interconnect
+block in quick on dc0 from 224.0.0.0/3 to any       #Class D & E multicast
+
+# Block fragments and too short tcp packets
+block in quick on dc0 all with frags
+block in quick on dc0 proto tcp all with short
+
+# block source routed packets
+block in quick on dc0 all with opt lsrr
+block in quick on dc0 all with opt ssrr
+
+# Block OS fingerprint attempts and log first occurrence
+block in log first quick on dc0 proto tcp from any to any flags FUP
+
+# Block anything with special options
+block in quick on dc0 all with ipopts
+
+# Block public pings and ident
+block in quick on dc0 proto icmp all icmp-type 8
+block in quick on dc0 proto tcp from any to any port = 113
+
+# Block incoming Netbios services
+block in log first quick on dc0 proto tcp/udp from any to any port = 137
+block in log first quick on dc0 proto tcp/udp from any to any port = 138
+block in log first quick on dc0 proto tcp/udp from any to any port = 139
+block in log first quick on dc0 proto tcp/udp from any to any port = 81
+----
+
+
+Any time there are logged messages on a rule with the `log first` option, run [command]``ipfstat -hio`` to evaluate how many times the rule has been matched.
+A large number of matches may indicate that the system is under attack.
+
+The rest of the rules in the inbound section define which connections are allowed to be initiated from the Internet.
+The last rule denies all connections which were not explicitly allowed by previous rules in this section.
+
+[source]
+----
+# Allow traffic in from ISP's DHCP server. Replace z.z.z.z with
+# the same IP address used in the outbound section.
+pass in quick on dc0 proto udp from z.z.z.z to any port = 68 keep state
+
+# Allow public connections to specified internal web server
+pass in quick on dc0 proto tcp from any to x.x.x.x port = 80 flags S keep state
+
+# Block and log only first occurrence of all remaining traffic.
+block in log first quick on dc0 all
+----
+
+=== Configuring NAT
+
+(((NAT)))
+
+(((IP masquerading)))
+
+(((network address translation)))
+
+(((ipnat)))
+
+
+To enable [acronym]``NAT``, add these statements to [path]``/etc/rc.conf``
+ and specify the name of the file containing the [acronym]``NAT`` rules:
+
+[source]
+----
+gateway_enable="YES"
+ipnat_enable="YES"
+ipnat_rules="/etc/ipnat.rules"
+----
+
+[acronym]``
+NAT`` rules are flexible and can accomplish many different things to fit the needs of both commercial and home users.
+The rule syntax presented here has been simplified to demonstrate common usage.
+For a complete rule syntax description, refer to  {{< manpage "ipnat" "5" >}}
+.
+
+The basic syntax for a [acronym]``NAT`` rule is as follows, where `map` starts the rule and [replaceable]``IF`` should be replaced with the name of the external interface:
+
+[source]
+----
+map IF LAN_IP_RANGE -> PUBLIC_ADDRESS
+----
+
+
+The [replaceable]``LAN_IP_RANGE`` is the range of [acronym]``IP`` addresses used by internal clients.
+Usually, it is a private address range such as [ipaddress]``192.168.1.0/24``
+.
+The [replaceable]``PUBLIC_ADDRESS`` can either be the static external [acronym]``IP`` address or the keyword `0/32` which represents the [acronym]``IP`` address assigned to [replaceable]``IF``.
+
+In [app]``IPF``, when a packet arrives at the firewall from the [acronym]``LAN`` with a public destination, it first passes through the outbound rules of the firewall ruleset.
+Then, the packet is passed to the [acronym]``NAT`` ruleset which is read from the top down, where the first matching rule wins. [app]``IPF`` tests each [acronym]``NAT`` rule against the packet's interface name and source [acronym]``IP`` address.
+When a packet's interface name matches a [acronym]``NAT`` rule, the packet's source [acronym]``IP`` address in the private [acronym]``LAN`` is checked to see if it falls within the [acronym]``IP`` address range specified in [replaceable]``LAN_IP_RANGE``.
+On a match, the packet has its source [acronym]``IP`` address rewritten with the public [acronym]``IP`` address specified by [replaceable]``PUBLIC_ADDRESS``. [app]``IPF`` posts an entry in its internal [acronym]``NAT`` table so that when the packet returns from the Internet, it can be mapped back to its original private [acronym]``IP`` address before being passed to the firewall rules for further processing.
+
+For networks that have large numbers of internal systems or multiple subnets, the process of funneling every private [acronym]``IP`` address into a single public [acronym]``IP`` address becomes a resource problem.
+Two methods are available to relieve this issue.
+
+The first method is to assign a range of ports to use as source ports.
+By adding the `portmap`	keyword, [acronym]``NAT`` can be directed to only use source ports in the specified range:
+
+[source]
+----
+map dc0 192.168.1.0/24 -> 0/32 portmap tcp/udp 20000:60000
+----
+
+
+Alternately, use the `auto` keyword which tells [acronym]``NAT`` to determine the ports that are available for use:
+
+[source]
+----
+map dc0 192.168.1.0/24 -> 0/32 portmap tcp/udp auto
+----
+
+
+The second method is to use a pool of public addresses.
+This is useful when there are too many [acronym]``LAN`` addresses to fit into a single public address and a block of public [acronym]``IP`` addresses is available.
+These public addresses can be used as a pool from which [acronym]``NAT`` selects an [acronym]``IP`` address as a packet's address is mapped on its way out.
+
+The range of public [acronym]``IP`` addresses can be specified using a netmask or [acronym]``CIDR``	notation.
+These two rules are equivalent:
+
+[source]
+----
+map dc0 192.168.1.0/24 -> 204.134.75.0/255.255.255.0
+map dc0 192.168.1.0/24 -> 204.134.75.0/24
+----
+
+
+A common practice is to have a publically accessible web server or mail server segregated to an internal network segment.
+The traffic from these servers still has to undergo [acronym]``NAT``, but port redirection is needed to direct inbound traffic to the correct server.
+For example, to map a web server using the internal address [ipaddress]``10.0.10.25``
+ to its public [acronym]``IP`` address of [ipaddress]``20.20.20.5``
+, use this rule:
+
+[source]
+----
+rdr dc0 20.20.20.5/32 port 80 -> 10.0.10.25 port 80
+----
+
+
+If it is the only web server, this rule would also work as it redirects all external [acronym]``HTTP`` requests to ``10.0.10.25``:
+
+[source]
+----
+rdr dc0 0.0.0.0/0 port 80 -> 10.0.10.25 port 80
+----
+
+[app]``
+IPF`` has a built in [acronym]``FTP`` proxy which can be used with [acronym]``NAT``.
+It monitors all outbound traffic for active or passive [acronym]``FTP`` connection requests and dynamically creates temporary filter rules containing the port number used by the [acronym]``FTP`` data channel.
+This eliminates the need to open large ranges of high order ports for [acronym]``FTP`` connections.
+
+In this example, the first rule calls the proxy for outbound [acronym]``FTP`` traffic from the internal [acronym]``LAN``.
+The second rule passes the [acronym]``FTP`` traffic from the firewall to the Internet, and the third rule handles all non-[acronym]``FTP`` traffic from the internal [acronym]``LAN``:
+
+[source]
+----
+map dc0 10.0.10.0/29 -> 0/32 proxy port 21 ftp/tcp
+map dc0 0.0.0.0/0 -> 0/32 proxy port 21 ftp/tcp
+map dc0 10.0.10.0/29 -> 0/32
+----
+
+
+The [acronym]``FTP````map`` rules go before the [acronym]``NAT`` rule so that when a packet matches an [acronym]``FTP`` rule, the [acronym]``FTP`` proxy creates temporary filter rules to let the [acronym]``FTP`` session packets pass and undergo [acronym]``NAT``.
+All LAN packets that are not [acronym]``FTP`` will not match the [acronym]``FTP`` rules but will undergo [acronym]``NAT`` if they match the third rule.
+
+Without the [acronym]``FTP`` proxy, the following firewall rules would instead be needed.
+Note that without the proxy, all ports above `1024` need to be allowed:
+
+[source]
+----
+# Allow out LAN PC client FTP to public Internet
+# Active and passive modes
+pass out quick on rl0 proto tcp from any to any port = 21 flags S keep state
+
+# Allow out passive mode data channel high order port numbers
+pass out quick on rl0 proto tcp from any to any port > 1024 flags S keep state
+
+# Active mode let data channel in from FTP server
+pass in quick on rl0 proto tcp from any to any port = 20 flags S keep state
+----
+
+
+Whenever the file containing the [acronym]``NAT``	rules is edited, run [command]``ipnat`` with [option]``-CF`` to delete the current [acronym]``NAT`` rules and flush the contents of the dynamic translation table.
+Include [option]``-f`` and specify the name of the [acronym]``NAT`` ruleset to load:
+
+----
+# ipnat -CF -f /etc/ipnat.rules
+----
+
+
+To display the [acronym]``NAT`` statistics:
+
+----
+# ipnat -s
+----
+
+
+To list the [acronym]``NAT`` table's current mappings:
+
+----
+# ipnat -l
+----
+
+
+To turn verbose mode on and display information relating to rule processing and active rules and table entries:
+
+----
+# ipnat -v
+----
+
+=== Viewing IPF Statistics
+
+(((ipfstat)))
+
+(((IPFILTER,statistics)))
+
+[app]``
+IPF`` includes  {{< manpage "ipfstat" "8" >}}
+	which can be used to retrieve and display statistics which are gathered as packets match rules as they go through the firewall.
+Statistics are accumulated since the firewall was last started or since the last time they were reset to zero using [command]``ipf
+	  -Z``.
+
+The default [command]``ipfstat`` output looks like this:
+
+----
+input packets: blocked 99286 passed 1255609 nomatch 14686 counted 0
+ output packets: blocked 4200 passed 1284345 nomatch 14687 counted 0
+ input packets logged: blocked 99286 passed 0
+ output packets logged: blocked 0 passed 0
+ packets logged: input 0 output 0
+ log failures: input 3898 output 0
+ fragment state(in): kept 0 lost 0
+ fragment state(out): kept 0 lost 0
+ packet state(in): kept 169364 lost 0
+ packet state(out): kept 431395 lost 0
+ ICMP replies: 0 TCP RSTs sent: 0
+ Result cache hits(in): 1215208 (out): 1098963
+ IN Pullups succeeded: 2 failed: 0
+ OUT Pullups succeeded: 0 failed: 0
+ Fastroute successes: 0 failures: 0
+ TCP cksum fails(in): 0 (out): 0
+ Packet log flags set: (0)
+----
+
+
+Several options are available.
+When supplied with either [option]``-i`` for inbound or [option]``-o`` for outbound, the command will retrieve and display the appropriate list of filter rules currently installed and in use by the kernel.
+To also see the rule numbers, include [option]``-n``.
+For example, [command]``ipfstat
+	  -on`` displays the outbound rules table with rule numbers:
+
+----
+@1 pass out on xl0 from any to any
+@2 block out on dc0 from any to any
+@3 pass out quick on dc0 proto tcp/udp from any to any keep state
+----
+
+
+Include [option]``-h`` to prefix each rule with a count of how many times the rule was matched.
+For example, [command]``ipfstat -oh`` displays the outbound internal rules table, prefixing each rule with its usage count:
+
+----
+2451423 pass out on xl0 from any to any
+354727 block out on dc0 from any to any
+430918 pass out quick on dc0 proto tcp/udp from any to any keep state
+----
+
+
+To display the state table in a format similar to  {{< manpage "top" "1" >}}
+, use [command]``ipfstat -t``.
+When the firewall is under attack, this option provides the ability to identify and see the attacking packets.
+The optional sub-flags give the ability to select the destination or source [acronym]``IP``, port, or protocol to be monitored in real time.
+Refer to  {{< manpage "ipfstat" "8" >}}
+ for details.
+
+=== IPF Logging
+
+(((IPFILTER,logging)))
+
+[app]``
+IPF`` provides [command]``ipmon``, which can be used to write the firewall's logging information in a human readable format.
+It requires that `options IPFILTER_LOG` be first added to a custom kernel using the instructions in <<_kernelconfig>>.
+
+This command is typically run in daemon mode in order to provide a continuous system log file so that logging of past events may be reviewed.
+Since FreeBSD has a built in  {{< manpage "syslogd" "8" >}}
+ facility to automatically rotate system logs, the default [path]``rc.conf````ipmon_flags`` statement uses [option]``-Ds``:
+
+[source]
+----
+ipmon_flags="-Ds" # D = start as daemon
+                  # s = log to syslog
+                  # v = log tcp window, ack, seq
+                  # n = map IP & port to names
+----
+
+
+Logging provides the ability to review, after the fact, information such as which packets were dropped, what addresses they came from, and where they were going.
+This information is useful in tracking down attackers.
+
+Once the logging facility is enabled in [path]``rc.conf``
+ and started with [command]``service
+	  ipmon start``, [app]``IPF`` will only log the rules which contain the `log`	keyword.
+The firewall administrator decides which rules in the ruleset should be logged and normally only deny rules are logged.
+It is customary to include the `log` keyword in the last rule in the ruleset.
+This makes it possible to see all the packets that did not match any of the rules in the ruleset.
+
+By default, [command]``ipmon -Ds`` mode uses `local0` as the logging facility.
+The following logging levels can be used to further segregate the logged data:
+
+----
+LOG_INFO - packets logged using the "log" keyword as the action rather than pass or block.
+LOG_NOTICE - packets logged which are also passed
+LOG_WARNING - packets logged which are also blocked
+LOG_ERR - packets which have been logged and which can be considered short due to an incomplete header
+----
+
+
+In order to setup [app]``IPF`` to log all data to [path]``/var/log/ipfilter.log``
+, first create the empty file:
+
+----
+# touch /var/log/ipfilter.log
+----
+
+
+Then, to write all logged messages to the specified file, add the following statement to [path]``/etc/syslog.conf``
+:
+
+[source]
+----
+local0.* /var/log/ipfilter.log
+----
+
+
+To activate the changes and instruct  {{< manpage "syslogd" "8" >}}
+	to read the modified [path]``/etc/syslog.conf``
+, run [command]``service syslogd reload``.
+
+Do not forget to edit [path]``/etc/newsyslog.conf``
+ to rotate the new log file.
+
+Messages generated by [command]``ipmon`` consist of data fields separated by white space.
+Fields common to all messages are:
+
+. The date of packet receipt.
+. The time of packet receipt. This is in the form HH:MM:SS.F, for hours, minutes, seconds, and fractions of a second.
+. The name of the interface that processed the packet.
+. The group and rule number of the rule in the format ``@0:17``.
+. The action: `p` for passed, `b` for blocked, `S` for a short packet, `n` did not match any rules, and `L` for a log rule.
+. The addresses written as three fields: the source address and port separated by a comma, the -> symbol, and the destination address and port. For example: ``209.53.17.22,80 -> 198.73.220.17,1722``.
+. `PR` followed by the protocol name or number: for example, ``PR tcp``.
+. `len` followed by the header length and total length of the packet: for example, ``len 20 40``.
+
+
+If the packet is a [acronym]``TCP`` packet, there will be an additional field starting with a hyphen followed by letters corresponding to any flags that were set.
+Refer to  {{< manpage "ipf" "5" >}}
+ for a list of letters and their flags.
+
+If the packet is an [acronym]``ICMP`` packet, there will be two fields at the end:  the first always being "`icmp`"
+ and the next being the [acronym]``ICMP`` message and sub-message type, separated by a slash.
+For example: `icmp 3/3` for a port unreachable message.
+
+ifdef::backend-docbook[]
+[index]
+== Index
+// Generated automatically by the DocBook toolchain.
+endif::backend-docbook[]

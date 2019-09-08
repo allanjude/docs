@@ -1,0 +1,30 @@
+---
+title: "OpenPGP Keys"
+---
+
+:sectnums!:
+
+[appendix]
+[[_pgpkeys]]
+= OpenPGP Keys
+
+(((pgp keys)))
+
+
+The Open[acronym]``PGP`` keys of the [fqdomainname]``FreeBSD.org``
+ officers are shown here.
+These keys can be used to verify a signature or send encrypted email to one of the officers.
+A full list of FreeBSD Open[acronym]``PGP`` keys is available in the link:/doc/en_US.ISO8859-1/en_US.ISO8859-1/articles/pgpkeys[PGP
+      Keys] article.
+The complete keyring can be downloaded at https://www.FreeBSD.org/doc/pgpkeyring.txt.
+
+[[_pgpkeys_officers]]
+== Officers
+
+:sectnums:
+
+ifdef::backend-docbook[]
+[index]
+== Index
+// Generated automatically by the DocBook toolchain.
+endif::backend-docbook[]

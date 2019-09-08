@@ -1,0 +1,322 @@
+---
+title: "FreeBSD Handbook"
+weight: 40
+---
+
+:sectnums!:
+
+[preface]
+[[_book_preface]]
+= Preface
+
+[float]
+[[_preface_audience]]
+== IntendedAudience
+
+
+The FreeBSD newcomer will find that the first section of this book guides the user through the FreeBSD installation process and gently introduces the concepts and conventions that underpin UNIX(R).  Working through this section requires little more than the desire to explore, and the ability to take on board new concepts as they are introduced.
+
+Once you have traveled this far, the second, far larger, section of the Handbook is a comprehensive reference to all manner of topics of interest to FreeBSD system administrators.
+Some of these chapters may recommend that you do some prior reading, and this is noted in the synopsis at the beginning of each chapter.
+
+For a list of additional sources of information, please see <<_bibliography>>.
+
+[float]
+[[_preface_changes_from3]]
+== Changesfrom the Third Edition
+
+
+The current online version of the Handbook represents the cumulative effort of many hundreds of contributors over the past 10 years.
+The following are some of the significant changes since the two volume third edition was published in 2004:
+
+* <<_dtrace>> has been added with information about the powerful DTrace performance analysis tool.
+* <<_filesystems>> has been added with information about non-native file systems in FreeBSD, such as ZFS from Sun(TM) .
+* <<_audit>> has been added to cover the new auditing capabilities in FreeBSD and explain its use.
+* <<_virtualization>> has been added with information about installing FreeBSD on virtualization software.
+* <<_bsdinstall>> has been added to cover installation of FreeBSD using the new installation utility, [app]``bsdinstall``.
+
+
+[float]
+[[_preface_changes_from2]]
+== Changesfrom the Second Edition (2004)
+
+
+The third edition was the culmination of over two years of work by the dedicated members of the FreeBSD Documentation Project.
+The printed edition grew to such a size that it was necessary to publish as two separate volumes.
+The following are the major changes in this new edition:
+
+* <<_config_tuning>> has been expanded with new information about the ACPI power and resource management, the [command]``cron`` system utility, and more kernel tuning options.
+* <<_security>> has been expanded with new information about virtual private networks (VPNs), file system access control lists (ACLs), and security advisories.
+* <<_mac>> is a new chapter with this edition. It explains what MAC is and how this mechanism can be used to secure a FreeBSD system.
+* <<_disks>> has been expanded with new information about USB storage devices, file system snapshots, file system quotas, file and network backed filesystems, and encrypted disk partitions.
+* A troubleshooting section has been added to <<_ppp_and_slip>>.
+* <<_mail>> has been expanded with new information about using alternative transport agents, SMTP authentication, UUCP, [app]``fetchmail``, [app]``procmail``, and other advanced topics.
+* <<_network_servers>> is all new with this edition. This chapter includes information about setting up the [app]``Apache HTTP Server``, [app]``ftpd``, and setting up a server for Microsoft(TM)Windows(TM) clients with [app]``Samba``. Some sections from <<_advanced_networking>> were moved here to improve the presentation.
+* <<_advanced_networking>> has been expanded with new information about using Bluetooth(TM) devices with FreeBSD, setting up wireless networks, and Asynchronous Transfer Mode (ATM) networking.
+* A glossary has been added to provide a central location for the definitions of technical terms used throughout the book.
+* A number of aesthetic improvements have been made to the tables and figures throughout the book.
+
+
+[float]
+[[_preface_changes]]
+== Changes fromthe First Edition (2001)
+
+
+The second edition was the culmination of over two years of work by the dedicated members of the FreeBSD Documentation Project.
+The following were the major changes in this edition:
+
+* A complete Index has been added.
+* All ASCII figures have been replaced by graphical diagrams.
+* A standard synopsis has been added to each chapter to give a quick summary of what information the chapter contains, and what the reader is expected to know.
+* The content has been logically reorganized into three parts: "`Getting Started`" , "`System Administration`" , and "`Appendices`" .
+* <<_basics>> has been expanded to contain additional information about processes, daemons, and signals.
+* <<_ports>> has been expanded to contain additional information about binary package management.
+* <<_x11>> has been completely rewritten with an emphasis on using modern desktop technologies such as [app]``KDE`` and [app]``GNOME`` on XFree86(TM) 4.X.
+* <<_boot>> has been expanded.
+* <<_disks>> has been written from what used to be two separate chapters on "`Disks`" and "`Backups`" . We feel that the topics are easier to comprehend when presented as a single chapter. A section on RAID (both hardware and software) has also been added.
+* <<_serialcomms>> has been completely reorganized and updated for FreeBSD 4.X/5.X.
+* <<_ppp_and_slip>> has been substantially updated.
+* Many new sections have been added to <<_advanced_networking>>.
+* <<_mail>> has been expanded to include more information about configuring [app]``sendmail``.
+* <<_linuxemu>> has been expanded to include information about installing [app]``Oracle(TM)`` and [app]``SAP(TM) {nbsp}R/3(TM)``.
+* The following new topics are covered in this second edition:
+** <<_config_tuning>>.
+** <<_multimedia>>.
+
+
+[float]
+[[_preface_overview]]
+== Organization of This Book
+
+
+This book is split into five logically distinct sections.
+The first section, __Getting Started__, covers the installation and basic usage of FreeBSD.
+It is expected that the reader will follow these chapters in sequence, possibly skipping chapters covering familiar topics.
+The second section, __Common Tasks__, covers some frequently used features of FreeBSD.
+This section, and all subsequent sections, can be read out of order.
+Each chapter begins with a succinct synopsis that describes what the chapter covers and what the reader is expected to already know.
+This is meant to allow the casual reader to skip around to find chapters of interest.
+The third section, __System Administration__, covers administration topics.
+The fourth section, __Network
+      Communication__, covers networking and server topics.
+The fifth section contains appendices of reference information.
+
+_<<_introduction>>_::
+Introduces FreeBSD to a new user.
+It describes the history of the FreeBSD Project, its goals and development model.
+
+_<<_bsdinstall>>_::
+Walks a user through the entire installation process of FreeBSD{nbsp}9.[replaceable]``x`` and later using [app]``bsdinstall``.
+
+_<<_basics>>_::
+Covers the basic commands and functionality of the FreeBSD operating system.
+If you are familiar with Linux(TM)
+or another flavor of UNIX(R) then you can probably skip this chapter.
+
+_<<_ports>>_::
+Covers the installation of third-party software with both FreeBSD's innovative "`Ports Collection`"
+and standard binary packages.
+
+_<<_x11>>_::
+Describes the X Window System in general and using X11 on FreeBSD in particular.
+Also describes common desktop environments such as [app]``KDE`` and [app]``GNOME``.
+
+_<<_desktop>>_::
+Lists some common desktop applications, such as web browsers and productivity suites, and describes how to install them on FreeBSD.
+
+_<<_multimedia>>_::
+Shows how to set up sound and video playback support for your system.
+Also describes some sample audio and video applications.
+
+_<<_kernelconfig>>_::
+Explains why you might need to configure a new kernel and provides detailed instructions for configuring, building, and installing a custom kernel.
+
+_<<_printing>>_::
+Describes managing printers on FreeBSD, including information about banner pages, printer accounting, and initial setup.
+
+_<<_linuxemu>>_::
+Describes the Linux(TM)
+compatibility features of FreeBSD.
+Also provides detailed installation instructions for many popular Linux(TM)
+applications such as [app]``Oracle(TM)`` and [app]``Mathematica(TM)``.
+
+_<<_config_tuning>>_::
+Describes the parameters available for system administrators to tune a FreeBSD system for optimum performance.
+Also describes the various configuration files used in FreeBSD and where to find them.
+
+_<<_boot>>_::
+Describes the FreeBSD boot process and explains how to control this process with configuration options.
+
+_<<_security>>_::
+Describes many different tools available to help keep your FreeBSD system secure, including Kerberos, IPsec and OpenSSH.
+
+_<<_jails>>_::
+Describes the jails framework, and the improvements of jails over the traditional chroot support of FreeBSD.
+
+_<<_mac>>_::
+Explains what Mandatory Access Control (MAC) is and how this mechanism can be used to secure a FreeBSD system.
+
+_<<_audit>>_::
+Describes what FreeBSD Event Auditing is, how it can be installed, configured, and how audit trails can be inspected or monitored.
+
+_<<_disks>>_::
+Describes how to manage storage media and filesystems with FreeBSD.
+This includes physical disks, RAID arrays, optical and tape media, memory-backed disks, and network filesystems.
+
+_<<_geom>>_::
+Describes what the GEOM framework in FreeBSD is and how to configure various supported RAID levels.
+
+_<<_filesystems>>_::
+Examines support of non-native file systems in FreeBSD, like the Z File System from Sun(TM)
+.
+
+_<<_virtualization>>_::
+Describes what virtualization systems offer, and how they can be used with FreeBSD.
+
+_<<_l10n>>_::
+Describes how to use FreeBSD in languages other than English.
+Covers both system and application level localization.
+
+_<<_updating_upgrading>>_::
+Explains the differences between FreeBSD-STABLE, FreeBSD-CURRENT, and FreeBSD releases.
+Describes which users would benefit from tracking a development system and outlines that process.
+Covers the methods users may take to update their system to the latest security release.
+
+_<<_dtrace>>_::
+Describes how to configure and use the DTrace tool from Sun(TM)
+in FreeBSD.
+Dynamic tracing can help locate performance issues, by performing real time system analysis.
+
+_<<_serialcomms>>_::
+Explains how to connect terminals and modems to your FreeBSD system for both dial in and dial out connections.
+
+_<<_ppp_and_slip>>_::
+Describes how to use PPP to connect to remote systems with FreeBSD.
+
+_<<_mail>>_::
+Explains the different components of an email server and dives into simple configuration topics for the most popular mail server software: [app]``sendmail``.
+
+_<<_network_servers>>_::
+Provides detailed instructions and example configuration files to set up your FreeBSD machine as a network filesystem server, domain name server, network information system server, or time synchronization server.
+
+_<<_firewalls>>_::
+Explains the philosophy behind software-based firewalls and provides detailed information about the configuration of the different firewalls available for FreeBSD.
+
+_<<_advanced_networking>>_::
+Describes many networking topics, including sharing an Internet connection with other computers on your LAN, advanced routing topics, wireless networking, Bluetooth(TM)
+, ATM, IPv6, and much more.
+
+_<<_mirrors>>_::
+Lists different sources for obtaining FreeBSD media on CDROM or DVD as well as different sites on the Internet that allow you to download and install FreeBSD.
+
+_<<_bibliography>>_::
+This book touches on many different subjects that may leave you hungry for a more detailed explanation.
+The bibliography lists many excellent books that are referenced in the text.
+
+_<<_eresources>>_::
+Describes the many forums available for FreeBSD users to post questions and engage in technical conversations about FreeBSD.
+
+_<<_pgpkeys>>_::
+Lists the PGP fingerprints of several FreeBSD Developers.
+
+
+[float]
+[[_preface_conv]]
+== Conventions usedin this book
+
+
+To provide a consistent and easy to read text, several conventions are followed throughout the book.
+
+[float]
+[[_preface_conv_typographic]]
+=== Typographic Conventions
+
+_Italic_::
+An _italic_ font is used for filenames, URLs, emphasized text, and the first usage of technical terms.
+
+`Monospace`::
+A `monospaced` font is used for error messages, commands, environment variables, names of ports, hostnames, user names, group names, device names, variables, and code fragments.
+
+[app]``Bold``::
+A kbd:[bold]
+font is used for applications, commands, and keys.
+
+
+[float]
+[[_preface_conv_commands]]
+=== UserInput
+
+
+Keys are shown in kbd:[bold]
+ to stand out from other text.
+Key combinations that are meant to be typed simultaneously are shown with ```\+``' between the keys, such as:
+
+kbd:[Ctrl+Alt+Del]
+
+Meaning the user should type the kbd:[Ctrl]
+, kbd:[Alt]
+, and kbd:[Del]
+ keys at the same time.
+
+Keys that are meant to be typed in sequence will be separated with commas, for example:
+
+kbd:[Ctrl+X]
+, kbd:[Ctrl+S]
+
+Would mean that the user is expected to type the kbd:[Ctrl]
+ and kbd:[X]
+ keys simultaneously and then to type the kbd:[Ctrl]
+ and kbd:[S]
+ keys simultaneously.
+
+[float]
+[[_preface_conv_examples]]
+=== Examples
+
+
+Examples starting with [path]``C:\>``
+ indicate a MS-DOS(TM)
+ command.
+Unless otherwise noted, these commands may be executed from a "`Command Prompt`"
+ window in a modern Microsoft(TM)
+{nbsp}Windows(TM)
+ environment.
+
+----
+E:\> tools\fdimage floppies\kern.flp A:
+----
+
+
+Examples starting with 
+ indicate a command that must be invoked as the superuser in FreeBSD.
+You can login as [username]``root``
+ to type the command, or login as your normal account and use  {{< manpage "su" "1" >}}
+ to gain superuser privileges.
+
+----
+# dd if=kern.flp of=/dev/fd0
+----
+
+
+Examples starting with 
+ indicate a command that should be invoked from a normal user account.
+Unless otherwise noted, C-shell syntax is used for setting environment variables and other shell commands.
+
+----
+% top
+----
+
+[float]
+[[_preface_acknowledgements]]
+== Acknowledgments
+
+
+The book you are holding represents the efforts of many hundreds of people around the world.
+Whether they sent in fixes for typos, or submitted complete chapters, all the contributions have been useful.
+
+Several companies have supported the development of this document by paying authors to work on it full-time, paying for publication, etc.
+In particular, BSDi (subsequently acquired by http://www.windriver.com[Wind River
+      Systems]) paid members of the FreeBSD Documentation Project to work on improving this book full time leading up to the publication of the first printed edition in March 2000 (ISBN 1-57176-241-8).  Wind River Systems then paid several additional authors to make a number of improvements to the print-output infrastructure and to add additional chapters to the text.
+This work culminated in the publication of the second printed edition in November 2001 (ISBN 1-57176-303-1).  In 2003-2004, http://www.freebsdmall.com[FreeBSD Mall, Inc], paid several contributors to improve the Handbook in preparation for the third printed edition.
+
+:sectnums:

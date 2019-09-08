@@ -1,0 +1,788 @@
+---
+title: "Localization -
+      i18n/L10n Usage and
+      Setup"
+---
+[[_l10n]]
+= Localization - i18n/L10n Usage and Setup
+:doctype: book
+:sectnums:
+:toc: left
+:icons: font
+:experimental:
+:sourcedir: .
+:imagesdir: ./images
+Andrey Chernov; Michael
+	C. Wu
+
+[[_l10n_synopsis]]
+== Synopsis
+
+
+FreeBSD is a distributed project with users and contributors located all over the world.
+As such, FreeBSD supports localization into many languages, allowing users to view, input, or process data in non-English languages.
+One can choose from most of the major languages, including, but not limited to:  Chinese, German, Japanese, Korean, French, Russian, and Vietnamese.
+
+(((internationalization)))
+
+(((localization)))
+
+
+The term internationalization has been shortened to [acronym]``i18n``, which represents the number of letters between the first and the last letters of ``internationalization``. [acronym]``L10n`` uses the same naming scheme, but from ``localization``.
+The [acronym]``i18n``/[acronym]``L10n`` methods, protocols, and applications allow users to use languages of their choice.
+
+This chapter discusses the internationalization and localization features of FreeBSD.
+After reading this chapter, you will know:
+
+* How locale names are constructed.
+* How to set the locale for a login shell.
+* How to configure the console for non-English languages.
+* How to configure [app]``Xorg`` for different languages.
+* How to find [acronym]``i18n``-compliant applications.
+* Where to find more information for configuring specific languages.
+
+
+Before reading this chapter, you should:
+
+* Know how to <<_ports,install additional third-party applications>>.
+
+
+== Using Localization
+
+(((locale)))
+
+
+Localization settings are based on three components: the language code, country code, and encoding.
+Locale names are constructed from these parts as follows:
+
+[source]
+----
+LanguageCode_CountryCode.Encoding
+----
+
+(((language codes)))
+
+(((country codes)))
+
+
+The [replaceable]``LanguageCode`` and [replaceable]``CountryCode`` are used to determine the country and the specific language variation.
+ <<_locale_lang_country>> provides some examples of [replaceable]``LanguageCode``_[replaceable]``CountryCode``:
+[[_locale_lang_country]]
+.Common Language and Country Codes
+[cols="1,1", frame="none", options="header"]
+|===
+| LanguageCode_Country Code
+| Description
+
+|en_US
+|English, United States
+
+|ru_RU
+|Russian, Russia
+
+|zh_TW
+|Traditional Chinese, Taiwan
+|===
+
+
+A complete listing of available locales can be found by typing:
+
+----
+% locale -a | more
+----
+
+
+To determine the current locale setting:
+
+----
+% locale
+----
+
+(((encodings)))
+
+(((ASCII)))
+
+
+Language specific character sets, such as ISO8859-1, ISO8859-15, KOI8-R, and CP437, are described in  {{< manpage "multibyte" "3" >}}
+.
+The active list of character sets can be found at the http://www.iana.org/assignments/character-sets[IANA
+	  Registry].
+
+Some languages, such as Chinese or Japanese, cannot be represented using [acronym]``ASCII`` characters and require an extended language encoding using either wide or multibyte characters.
+Examples of wide or multibyte encodings include EUC and Big5.
+Older applications may mistake these encodings for control characters while newer applications usually recognize these characters.
+Depending on the implementation, users may be required to compile an application with wide or multibyte character support, or to configure it correctly.
+
+[NOTE]
+====
+FreeBSD uses Xorg-compatible locale encodings.
+====
+
+
+The rest of this section describes the various methods for configuring the locale on a FreeBSD system.
+The next section will discuss the considerations for finding and compiling applications with [acronym]``i18n`` support.
+
+[[_setting_locale]]
+=== Setting Locale for Login Shell
+
+
+Locale settings are configured either in a user's [path]``~/.login_conf``
+	or in the startup file of the user's shell: [path]``~/.profile``
+, [path]``~/.bashrc``
+, or [path]``~/.cshrc``
+.
+
+Two environment variables should be set:
+
+* [var]``LANG``, which sets the locale
++
+
+(((POSIX)))
+* {empty}
++
+
+(((MIME)))
++ 
+[var]``
+MM_CHARSET``, which sets the [acronym]``MIME`` character set used by applications
+
+
+In addition to the user's shell configuration, these variables should also be set for specific application configuration and [app]``Xorg``	configuration.
+
+(((locale)))
+
+(((login class)))
+
+
+Two methods are available for making the needed variable assignments: the <<_login_class,login
+	  class>> method, which is the recommended method, and the <<_startup_file,startup file>> method.
+The next two sections demonstrate how to use both methods.
+
+[[_login_class]]
+==== Login Classes Method
+
+
+This first method is the recommended method as it assigns the required environment variables for locale name and [acronym]``MIME`` character sets for every possible shell.
+This setup can either be performed by each user or it can be configured for all users by the superuser.
+
+This minimal example sets both variables for Latin-1 encoding in the [path]``.login_conf``
+ of an individual user's home directory:
+
+[source]
+----
+me:\
+	:charset=ISO-8859-1:\
+	:lang=de_DE.ISO8859-1:
+----
+
+(((Traditional Chinese,BIG-5 encoding)))
+
+
+Here is an example of a user's [path]``~/.login_conf``
+ that sets the variables for Traditional Chinese in BIG-5 encoding.
+More variables are needed because some applications do not correctly respect locale variables for Chinese, Japanese, and Korean:
+
+[source]
+----
+#Users who do not wish to use monetary units or time formats
+#of Taiwan can manually change each variable
+me:\
+	:lang=zh_TW.Big5:\
+	:setenv=LC_ALL=zh_TW.Big5,LC_COLLATE=zh_TW.Big5,LC_CTYPE=zh_TW.Big5,LC_MESSAGES=zh_TW.Big5,LC_MONETARY=zh_TW.Big5,LC_NUMERIC=zh_TW.Big5,LC_TIME=zh_TW.Big5:\
+	:charset=big5:\
+	:xmodifiers="@im=gcin": #Set gcin as the XIM Input Server
+----
+
+
+Alternately, the superuser can configure all users of the system for localization.
+The following variables in [path]``/etc/login.conf``
+ are used to set the locale and [acronym]``MIME`` character set:
+
+[source]
+----
+language_name|Account Type Description:\
+	:charset=MIME_charset:\
+	:lang=locale_name:\
+	:tc=default:
+----
+
+
+So, the previous Latin-1 example would look like this:
+
+[source]
+----
+german|German Users Accounts:\
+	:charset=ISO-8859-1:\
+	:lang=de_DE.ISO8859-1:\
+	:tc=default:
+----
+
+
+See  {{< manpage "login.conf" "5" >}}
+ for more details about these variables.
+Note that it already contains pre-defined [replaceable]``russian`` class.
+
+Whenever [path]``/etc/login.conf``
+ is edited, remember to execute the following command to update the capability database:
+
+----
+# cap_mkdb /etc/login.conf
+----
+
+===== Utilities Which Change Login Classes
+
+
+In addition to manually editing [path]``/etc/login.conf``
+, several utilities are available for setting the locale for newly created users.
+
+When using [command]``vipw`` to add new users, specify the [replaceable]``language`` to set the locale:
+
+[source]
+----
+user:password:1111:11:language:0:0:User Name:/home/user:/bin/sh
+----
+
+(((adduser)))
+
+(((login class)))
+
+
+When using [command]``adduser`` to add new users, the default language can be pre-configured for all new users or specified for an individual user.
+
+If all new users use the same language, set `defaultclass=[replaceable]``language``` in [path]``/etc/adduser.conf``
+.
+
+To override this setting when creating a user, either input the required locale at this prompt:
+
+----
+Enter login class: default []: 
+----
+
+
+or specify the locale to set when invoking [command]``adduser``:
+
+----
+# adduser -class language
+----
+
+(((pw)))
+
+
+If [command]``pw`` is used to add new users, specify the locale as follows:
+
+----
+# pw useradd user_name -L language
+----
+
+
+To change the login class of an existing user, [command]``chpass`` can be used.
+Invoke it as superuser and provide the username to edit as the argument.
+
+----
+# chpass user_name
+----
+
+[[_startup_file]]
+==== Shell Startup File Method
+
+
+This second method is not recommended as each shell that is used requires manual configuration, where each shell has a different configuration file and differing syntax.
+As an example, to set the German language for the [command]``sh`` shell, these lines could be added to [path]``~/.profile``
+ to set the shell for that user only.
+These lines could also be added to [path]``/etc/profile``
+ or [path]``/usr/share/skel/dot.profile``
+ to set that shell for all users:
+
+[source]
+----
+LANG=de_DE.ISO8859-1; export LANG
+MM_CHARSET=ISO-8859-1; export MM_CHARSET
+----
+
+
+However, the name of the configuration file and the syntax used differs for the [command]``csh`` shell.
+These are the equivalent settings for [path]``~/.csh.login``
+, [path]``/etc/csh.login``
+, or [path]``/usr/share/skel/dot.login``
+:
+
+[source]
+----
+setenv LANG de_DE.ISO8859-1
+setenv MM_CHARSET ISO-8859-1
+----
+
+
+To complicate matters, the syntax needed to configure [app]``Xorg`` in [path]``~/.xinitrc``
+ also depends upon the shell.
+The first example is for the [command]``sh``	    shell and the second is for the [command]``csh``	    shell:
+
+[source]
+----
+LANG=de_DE.ISO8859-1; export LANG
+----
+
+[source]
+----
+setenv LANG de_DE.ISO8859-1
+----
+
+[[_setting_console]]
+=== Console Setup
+
+
+Several localized fonts are available for the console.
+To see a listing of available fonts, type [command]``ls /usr/share/syscons/fonts``.
+To configure the console font, specify the [replaceable]``font_name``, without the [path]``.fnt``
+ suffix, in [path]``/etc/rc.conf``
+:
+
+[source]
+----
+font8x16=font_name
+font8x14=font_name
+font8x8=font_name
+----
+
+(((keymap)))
+
+(((screenmap)))
+
+
+The keymap and screenmap  can be set by adding the following to [path]``/etc/rc.conf``
+:
+
+[source]
+----
+scrnmap=screenmap_name
+keymap=keymap_name
+keychange="fkey_number sequence"
+----
+
+
+To see the list of available screenmaps, type [command]``ls /usr/share/syscons/scrnmaps``.
+Do not include the [path]``.scm``
+ suffix when specifying [replaceable]``screenmap_name``.
+A screenmap with a corresponding mapped font is usually needed as a workaround for expanding bit 8 to bit 9 on a VGA adapter's font character matrix so that letters are moved out of the pseudographics area if the screen font uses a bit 8 column.
+
+To see the list of available keymaps, type [command]``ls /usr/share/syscons/keymaps``.
+When specifying the [replaceable]``keymap_name``, do not include the [path]``.kbd``
+ suffix.
+To test keymaps without rebooting, use  {{< manpage "kbdmap" "1" >}}
+.
+
+The `keychange` entry is usually needed to program function keys to match the selected terminal type because function key sequences cannot be defined in the keymap.
+
+Next, set the correct console terminal type in [path]``/etc/ttys``
+ for all virtual terminal entries. <<_locale_charset>> summarizes the available terminal types.:
+[[_locale_charset]]
+.Defined Terminal Types for Character Sets
+[cols="1,1", frame="none", options="header"]
+|===
+| Character Set
+| Terminal Type
+
+|ISO8859-1 or ISO8859-15
+|``cons25l1``
+
+|ISO8859-2
+|``cons25l2``
+
+|ISO8859-7
+|``cons25l7``
+
+|KOI8-R
+|``cons25r``
+
+|KOI8-U
+|``cons25u``
+
+|CP437 (VGA default)
+|``cons25``
+
+|US-ASCII
+|``cons25w``
+|===
+
+(((moused)))
+
+
+For languages with wide or multibyte characters, install a console for that language from the FreeBSD Ports Collection.
+The available ports are summarized in <<_locale_console>>.
+Once installed, refer to the port's [path]``pkg-message``
+ or man pages for configuration and usage instructions.
+[[_locale_console]]
+.Available Console from Ports Collection
+[cols="1,1", frame="none", options="header"]
+|===
+| Language
+| Port Location
+
+|Traditional Chinese (BIG-5)
+|[package]#chinese/big5con#
+
+|
+Chinese/Japanese/Korean
+|[package]#chinese/cce#
+
+|
+Chinese/Japanese/Korean
+|[package]#chinese/zhcon#
+
+|
+Japanese
+|[package]#chinese/kon2#
+
+|
+Japanese
+|[package]#japanese/kon2-14dot#
+
+|
+Japanese
+|[package]#japanese/kon2-16dot#
+|===
+
+
+If [app]``moused`` is enabled in [path]``/etc/rc.conf``
+, additional configuration may be required.
+By default, the mouse cursor of the  {{< manpage "syscons" "4" >}}
+ driver occupies the ``0xd0``-``0xd3`` range in the character set.
+If the language uses this range, move the cursor's range by adding the following line to [path]``/etc/rc.conf``
+:
+
+[source]
+----
+mousechar_start=3
+----
+
+=== Xorg Setup
+
+<<_x11>> describes how to install and configure [app]``Xorg``.
+When configuring [app]``Xorg`` for localization, additional fonts and input methods are available from the FreeBSD Ports Collection.
+Application specific [acronym]``i18n``	settings such as fonts and menus can be tuned in [path]``~/.Xresources``
+ and should allow users to view their selected language in graphical application menus.
+
+(((X Input Method (XIM))))
+
+
+The X Input Method ([acronym]``XIM``) protocol is an [app]``Xorg`` standard for  inputting non-English characters.
+ <<_locale_xim>>	summarizes the input method applications which are available in the FreeBSD Ports Collection.
+Additional Fcitx and Uim applications are also available.
+[[_locale_xim]]
+.Available Input Methods
+[cols="1,1", frame="none", options="header"]
+|===
+| Language
+| Input Method
+
+|Chinese
+|[package]#chinese/gcin#
+
+|
+Chinese
+|[package]#chinese/ibus-chewing#
+
+|
+Chinese
+|[package]#chinese/ibus-pinyin#
+
+|
+Chinese
+|[package]#chinese/oxim#
+
+|
+Chinese
+|[package]#chinese/scim-fcitx#
+
+|
+Chinese
+|[package]#chinese/scim-pinyin#
+
+|
+Chinese
+|[package]#chinese/scim-tables#
+
+|
+Japanese
+|[package]#japanese/ibus-anthy#
+
+|
+Japanese
+|[package]#japanese/ibus-mozc#
+
+|
+Japanese
+|[package]#japanese/ibus-skk#
+
+|
+Japanese
+|[package]#japanese/im-ja#
+
+|
+Japanese
+|[package]#japanese/kinput2#
+
+|
+Japanese
+|[package]#japanese/scim-anthy#
+
+|
+Japanese
+|[package]#japanese/scim-canna#
+
+|
+Japanese
+|[package]#japanese/scim-honoka#
+
+|
+Japanese
+|[package]#japanese/scim-honoka-plugin-romkan#
+
+|
+Japanese
+|[package]#japanese/scim-honoka-plugin-wnn#
+
+|
+Japanese
+|[package]#japanese/scim-prime#
+
+|
+Japanese
+|[package]#japanese/scim-skk#
+
+|
+Japanese
+|[package]#japanese/scim-tables#
+
+|
+Japanese
+|[package]#japanese/scim-tomoe#
+
+|
+Japanese
+|[package]#japanese/scim-uim#
+
+|
+Japanese
+|[package]#japanese/skkinput#
+
+|
+Japanese
+|[package]#japanese/skkinput3#
+
+|
+Japanese
+|[package]#japanese/uim-anthy#
+
+|
+Korean
+|[package]#korean/ibus-hangul#
+
+|
+Korean
+|[package]#korean/imhangul#
+
+|
+Korean
+|[package]#korean/nabi#
+
+|
+Korean
+|[package]#korean/scim-hangul#
+
+|
+Korean
+|[package]#korean/scim-tables#
+
+|
+Vietnamese
+|[package]#vietnamese/xvnkb#
+
+|
+Vietnamese
+|[package]#vietnamese/x-unikey#
+|===
+
+[[_l10n_compiling]]
+== Finding i18n Applications
+
+[acronym]``
+i18n`` applications are programmed using [acronym]``i18n`` kits under libraries.
+These allow developers to write a simple file and translate displayed menus and texts to each language.
+
+The link:@@URL_RELPREFIX@@/ports/index.html[FreeBSD
+	Ports Collection] contains many applications with built-in support for wide or multibyte characters for several languages.
+Such applications include `i18n` in their names for easy identification.
+However, they do not always support the language needed.
+
+Some applications can be compiled with the specific charset.
+This is usually done in the port's [path]``Makefile``
+ or by passing a value to [app]``configure``.
+Refer to the [acronym]``i18n`` documentation in the respective FreeBSD port's source for more information on how to determine the needed [app]``configure`` value  or the port's [path]``Makefile``
+ to determine which compile options to use when building the port.
+
+[[_lang_setup]]
+== Locale Configuration for Specific Languages
+
+
+This section provides configuration examples for localizing a FreeBSD system for the Russian language.
+It then provides some additional resources for localizing other languages.
+
+[[_ru_localize]]
+=== Russian Language (KOI8-R Encoding)
+= Russian Language (KOI8-R Encoding)
+:imagesdir: ./images
+Andrey Chernov
+
+(((localization,Russian)))
+
+
+This section shows the specific settings needed to localize a FreeBSD system for the Russian language.
+Refer to <<_using_localization,Using Localization>>	for a more complete description of each type of setting.
+
+To set this locale for the login shell, add the following lines to each user's [path]``~/.login_conf``
+:
+
+[source]
+----
+me:My Account:\
+	:charset=KOI8-R:\
+	:lang=ru_RU.KOI8-R:
+----
+
+
+To configure the console, add the following lines to [path]``/etc/rc.conf``
+:
+
+[source]
+----
+keymap="ru.koi8-r"
+scrnmap="koi8-r2cp866"
+font8x16="cp866b-8x16"
+font8x14="cp866-8x14"
+font8x8="cp866-8x8"
+mousechar_start=3
+----
+
+
+For each `ttyv` entry in [path]``/etc/ttys``
+, use `cons25r` as the terminal type.
+
+
+To configure printing, a special output filter is needed to convert from KOI8-R to CP866 since most printers with Russian characters come with hardware code page CP866.
+FreeBSD includes a default filter for this purpose, [path]``/usr/libexec/lpr/ru/koi2alt``
+.
+To use this filter, add this entry to [path]``/etc/printcap``
+:
+
+[source]
+----
+lp|Russian local line printer:\
+	:sh:of=/usr/libexec/lpr/ru/koi2alt:\
+	:lp=/dev/lpt0:sd=/var/spool/output/lpd:lf=/var/log/lpd-errs:
+----
+
+
+Refer to  {{< manpage "printcap" "5" >}}
+ for a more detailed explanation.
+
+To configure support for Russian filenames in mounted MS-DOS(TM)
+ file systems, include [option]``-L`` and the locale name when adding an entry to [path]``/etc/fstab``
+:
+
+[source]
+----
+/dev/ad0s2      /dos/c  msdos   rw,-Lru_RU.KOI8-R 0 0
+----
+
+
+Refer to  {{< manpage "mount_msdosfs" "8" >}}
+ for more details.
+
+To configure Russian fonts for [app]``Xorg``, install the [package]#x11-fonts/xorg-fonts-cyrillic#
+ package.
+Then, check the `"Files"` section in [path]``/etc/X11/xorg.conf``
+.
+The following line must be added _before_ any other `FontPath` entries:
+
+[source]
+----
+FontPath   "/usr/local/lib/X11/fonts/cyrillic"
+----
+
+
+Additional Cyrillic fonts are available in the Ports Collection.
+
+To activate a Russian keyboard, add the following to the `"Keyboard"` section of [path]``/etc/xorg.conf``
+:
+
+[source]
+----
+Option "XkbLayout"   "us,ru"
+Option "XkbOptions"  "grp:toggle"
+----
+
+
+Make sure that `XkbDisable` is commented out in that file.
+
+For `grp:toggle` use kbd:[Right Alt]
+, for `grp:ctrl_shift_toggle` use kbd:[Ctrl+Shift]
+.
+For `grp:caps_toggle` use kbd:[CapsLock]
+.
+The old kbd:[CapsLock]
+ function is still available in LAT mode only using kbd:[Shift+CapsLock]
+. `grp:caps_toggle` does not work in [app]``Xorg`` for some unknown reason.
+
+If the keyboard has "`Windows(TM)`"
+ keys, and some non-alphabetical keys are mapped incorrectly, add the following line to [path]``/etc/xorg.conf``
+:
+
+[source]
+----
+Option "XkbVariant" ",winkeys"
+----
+
+[NOTE]
+====
+The Russian XKB keyboard may not work with non-localized applications.
+Minimally localized applications should call a `XtSetLanguageProc
+	    (NULL, NULL, NULL);` function early in the program.
+====
+
+
+See http://koi8.pp.ru/xwin.html	for more instructions on localizing [app]``Xorg`` applications.
+For more general information about KOI8-R encoding, refer to http://koi8.pp.ru/.
+
+=== Additional Language-Specific Resources
+
+
+This section lists some additional resources for configuring other locales.
+
+(((localization,Traditional Chinese)))
+
+(((localization,Greek)))
+
+(((localization,Korean)))
+
+Traditional Chinese for Taiwan::
+The FreeBSD-Taiwan Project has a Chinese HOWTO for FreeBSD at http://netlab.cse.yzu.edu.tw/~statue/freebsd/zh-tut/.
+
+Greek Language Localization::
+A complete article on Greek support in FreeBSD is available link:/doc/en_US.ISO8859-1/el_GR.ISO8859-7/articles/greek-language-support/index.html[here], in Greek only, as part of the official FreeBSD Greek documentation.
+
+Japanese and Korean Language Localization::
+For Japanese, refer to http://www.jp.FreeBSD.org/, and for Korean, refer to http://www.kr.FreeBSD.org/.
+
+Non-English FreeBSD Documentation::
+Some FreeBSD contributors have translated parts of the FreeBSD documentation to other languages.
+They are available through links on the link:@@URL_RELPREFIX@@/index.html[FreeBSD web
+site] or in [path]``/usr/share/doc``
+.
+
+
+ifdef::backend-docbook[]
+[index]
+== Index
+// Generated automatically by the DocBook toolchain.
+endif::backend-docbook[]

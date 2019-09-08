@@ -1,0 +1,3150 @@
+---
+title: "The Z File System (ZFS)"
+---
+[[_zfs]]
+= The Z File System (ZFS)
+:doctype: book
+:sectnums:
+:toc: left
+:icons: font
+:experimental:
+:sourcedir: .
+:imagesdir: ./images
+Tom Rhodes; Allan Jude; Benedict Reuschling; Warren Block
+
+
+The __Z File System__, or [acronym]``ZFS``, is an advanced file system designed to overcome many of the major problems found in previous designs.
+
+Originally developed at Sun(TM)
+, ongoing open source [acronym]``ZFS`` development has moved to the http://open-zfs.org[OpenZFS Project].
+
+[acronym]``ZFS`` has three major design goals:
+
+* Data integrity: All data includes a <<_zfs_term_checksum,checksum>> of the data. When data is written, the checksum is calculated and written along with it. When that data is later read back, the checksum is calculated again. If the checksums do not match, a data error has been detected. [acronym]``ZFS`` will attempt to automatically correct errors when data redundancy is available.
+* Pooled storage: physical storage devices are added to a pool, and storage space is allocated from that shared pool. Space is available to all file systems, and can be increased by adding new storage devices to the pool.
+* Performance: multiple caching mechanisms provide increased performance. <<_zfs_term_arc,ARC>> is an advanced memory-based read cache. A second level of disk-based read cache can be added with <<_zfs_term_l2arc,L2ARC>>, and disk-based synchronous write cache is available with <<_zfs_term_zil,ZIL>>.
+
+
+A complete list of features and terminology is shown in <<_zfs_term>>.
+
+[[_zfs_differences]]
+== What Makes ZFS Different
+
+[acronym]``
+ZFS`` is significantly different from any previous file system because it is more than just a file system.
+Combining the traditionally separate roles of volume manager and file system provides [acronym]``ZFS`` with unique advantages.
+The file system is now aware of the underlying structure of the disks.
+Traditional file systems could only be created on a single disk at a time.
+If there were two disks then two separate file systems would have to be created.
+In a traditional hardware [acronym]``RAID`` configuration, this problem was avoided by presenting the operating system with a single logical disk made up of the space provided by a number of physical disks, on top of which the operating system placed a file system.
+Even in the case of software [acronym]``RAID`` solutions like those provided by [acronym]``GEOM``, the [acronym]``UFS`` file system living on top of the [acronym]``RAID`` transform believed that it was dealing with a single device. [acronym]``ZFS``'s combination of the volume manager and the file system solves this and allows the creation of many file systems all sharing a pool of available storage.
+One of the biggest advantages to [acronym]``ZFS``'s awareness of the physical layout of the disks is that existing file systems can be grown automatically when additional disks are added to the pool.
+This new space is then made available to all of the file systems.
+ [acronym]``ZFS`` also has a number of different properties that can be applied to each file system, giving many advantages to creating a number of different file systems and datasets rather than a single monolithic file system.
+
+[[_zfs_quickstart]]
+== Quick Start Guide
+
+
+There is a startup mechanism that allows FreeBSD to mount [acronym]``ZFS`` pools during system initialization.
+To enable it, add this line to [path]``/etc/rc.conf``
+:
+
+[source]
+----
+zfs_enable="YES"
+----
+
+
+Then start the service:
+
+----
+# service zfs start
+----
+
+
+The examples in this section assume three [acronym]``SCSI`` disks with the device names [path]``da0``
+, [path]``da1``
+, and [path]``da2``
+.
+Users of [acronym]``SATA`` hardware should instead use [path]``ada``
+ device names.
+
+[[_zfs_quickstart_single_disk_pool]]
+=== Single Disk Pool
+
+
+To create a simple, non-redundant pool using a single disk device:
+
+----
+# zpool create example /dev/da0
+----
+
+
+To view the new pool, review the output of [command]``df``:
+
+----
+# dfFilesystem  1K-blocks    Used    Avail Capacity  Mounted on
+/dev/ad0s1a   2026030  235230  1628718    13%    /
+devfs               1       1        0   100%    /dev
+/dev/ad0s1d  54098308 1032846 48737598     2%    /usr
+example      17547136       0 17547136     0%    /example
+----
+
+
+This output shows that the `example` pool has been created and mounted.
+It is now accessible as a file system.
+Files can be created on it and users can browse it:
+
+----
+# cd /example
+# ls
+# touch testfile
+# ls -altotal 4
+drwxr-xr-x   2 root  wheel    3 Aug 29 23:15 .
+drwxr-xr-x  21 root  wheel  512 Aug 29 23:12 ..
+-rw-r--r--   1 root  wheel    0 Aug 29 23:15 testfile
+----
+
+
+However, this pool is not taking advantage of any [acronym]``ZFS`` features.
+To create a dataset on this pool with compression enabled:
+
+----
+# zfs create example/compressed
+# zfs set compression=gzip example/compressed
+----
+
+
+The `example/compressed` dataset is now a [acronym]``ZFS`` compressed file system.
+Try copying some large files to [path]``/example/compressed``
+.
+
+Compression can be disabled with:
+
+----
+# zfs set compression=off example/compressed
+----
+
+
+To unmount a file system, use [command]``zfs umount`` and then verify with [command]``df``:
+
+----
+# zfs umount example/compressed
+# dfFilesystem  1K-blocks    Used    Avail Capacity  Mounted on
+/dev/ad0s1a   2026030  235232  1628716    13%    /
+devfs               1       1        0   100%    /dev
+/dev/ad0s1d  54098308 1032864 48737580     2%    /usr
+example      17547008       0 17547008     0%    /example
+----
+
+
+To re-mount the file system to make it accessible again, use [command]``zfs mount`` and verify with [command]``df``:
+
+----
+# zfs mount example/compressed
+# dfFilesystem         1K-blocks    Used    Avail Capacity  Mounted on
+/dev/ad0s1a          2026030  235234  1628714    13%    /
+devfs                      1       1        0   100%    /dev
+/dev/ad0s1d         54098308 1032864 48737580     2%    /usr
+example             17547008       0 17547008     0%    /example
+example/compressed  17547008       0 17547008     0%    /example/compressed
+----
+
+
+The pool and file system may also be observed by viewing the output from [command]``mount``:
+
+----
+# mount/dev/ad0s1a on / (ufs, local)
+devfs on /dev (devfs, local)
+/dev/ad0s1d on /usr (ufs, local, soft-updates)
+example on /example (zfs, local)
+example/compressed on /example/compressed (zfs, local)
+----
+
+
+After creation, [acronym]``ZFS`` datasets can be used like any file systems.
+However, many other features are available which can be set on a per-dataset basis.
+In the example below, a new file system called `data` is created.
+Important files will be stored here, so it is configured to keep two copies of each data block:
+
+----
+# zfs create example/data
+# zfs set copies=2 example/data
+----
+
+
+It is now possible to see the data and space utilization by issuing [command]``df``:
+
+----
+# dfFilesystem         1K-blocks    Used    Avail Capacity  Mounted on
+/dev/ad0s1a          2026030  235234  1628714    13%    /
+devfs                      1       1        0   100%    /dev
+/dev/ad0s1d         54098308 1032864 48737580     2%    /usr
+example             17547008       0 17547008     0%    /example
+example/compressed  17547008       0 17547008     0%    /example/compressed
+example/data        17547008       0 17547008     0%    /example/data
+----
+
+
+Notice that each file system on the pool has the same amount of available space.
+This is the reason for using [command]``df`` in these examples, to show that the file systems use only the amount of space they need and all draw from the same pool.
+ [acronym]``ZFS`` eliminates concepts such as volumes and partitions, and allows multiple file systems to occupy the same pool.
+
+To destroy the file systems and then destroy the pool as it is no longer needed:
+
+----
+# zfs destroy example/compressed
+# zfs destroy example/data
+# zpool destroy example
+----
+
+[[_zfs_quickstart_raid_z]]
+=== RAID-Z
+
+
+Disks fail.
+One method of avoiding data loss from disk failure is to implement [acronym]``RAID``. [acronym]``ZFS`` supports this feature in its pool design.
+ [acronym]``RAID-Z`` pools require three or more disks but provide more usable space than mirrored pools.
+
+This example creates a [acronym]``RAID-Z`` pool, specifying the disks to add to the pool:
+
+----
+# zpool create storage raidz da0 da1 da2
+----
+
+[NOTE]
+====
+Sun(TM)
+ recommends that the number of devices used in a [acronym]``RAID``-Z configuration be between three and nine.
+For environments requiring a single pool consisting of 10 disks or more, consider breaking it up into smaller [acronym]``RAID-Z`` groups.
+If only two disks are available and redundancy is a requirement, consider using a [acronym]``ZFS`` mirror.
+Refer to  {{< manpage "zpool" "8" >}}
+ for more details.
+====
+
+
+The previous example created the `storage` zpool.
+This example makes a new file system called `home` in that pool:
+
+----
+# zfs create storage/home
+----
+
+
+Compression and keeping extra copies of directories and files can be enabled:
+
+----
+# zfs set copies=2 storage/home
+# zfs set compression=gzip storage/home
+----
+
+
+To make this the new home directory for users, copy the user data to this directory and create the appropriate symbolic links:
+
+----
+# cp -rp /home/* /storage/home
+# rm -rf /home /usr/home
+# ln -s /storage/home /home
+# ln -s /storage/home /usr/home
+----
+
+
+Users data is now stored on the freshly-created [path]``/storage/home``
+.
+Test by adding a new user and logging in as that user.
+
+Try creating a file system snapshot which can be rolled back later:
+
+----
+# zfs snapshot storage/home@08-30-08
+----
+
+
+Snapshots can only be made of a full file system, not a single directory or file.
+
+The `@` character is a delimiter between the file system name or the volume name.
+If an important directory has been accidentally deleted, the file system can be backed up, then rolled back to an earlier snapshot when the directory still existed:
+
+----
+# zfs rollback storage/home@08-30-08
+----
+
+
+To list all available snapshots, run [command]``ls`` in the file system's [path]``.zfs/snapshot``
+ directory.
+For example, to see the previously taken snapshot:
+
+----
+# ls /storage/home/.zfs/snapshot
+----
+
+
+It is possible to write a script to perform regular snapshots on user data.
+However, over time, snapshots can consume a great deal of disk space.
+The previous snapshot can be removed using the command:
+
+----
+# zfs destroy storage/home@08-30-08
+----
+
+
+After testing, [path]``/storage/home``
+ can be made the real [path]``/home``
+ using this command:
+
+----
+# zfs set mountpoint=/home storage/home
+----
+
+
+Run [command]``df`` and [command]``mount`` to confirm that the system now treats the file system as the real [path]``/home``
+:
+
+----
+# mount/dev/ad0s1a on / (ufs, local)
+devfs on /dev (devfs, local)
+/dev/ad0s1d on /usr (ufs, local, soft-updates)
+storage on /storage (zfs, local)
+storage/home on /home (zfs, local)
+# dfFilesystem   1K-blocks    Used    Avail Capacity  Mounted on
+/dev/ad0s1a    2026030  235240  1628708    13%    /
+devfs                1       1        0   100%    /dev
+/dev/ad0s1d   54098308 1032826 48737618     2%    /usr
+storage       26320512       0 26320512     0%    /storage
+storage/home  26320512       0 26320512     0%    /home
+----
+
+
+This completes the [acronym]``RAID-Z``	configuration.
+Daily status updates about the file systems created can be generated as part of the nightly  {{< manpage "periodic" "8" >}}
+ runs.
+Add this line to [path]``/etc/periodic.conf``
+:
+
+[source]
+----
+daily_status_zfs_enable="YES"
+----
+
+[[_zfs_quickstart_recovering_raid_z]]
+=== Recovering RAID-Z
+
+
+Every software [acronym]``RAID`` has a method of monitoring its ``state``.
+The status of [acronym]``RAID-Z`` devices may be viewed with this command:
+
+----
+# zpool status -x
+----
+
+
+If all pools are <<_zfs_term_online,Online>> and everything is normal, the message shows:
+
+----
+all pools are healthy
+----
+
+
+If there is an issue, perhaps a disk is in the <<_zfs_term_offline,Offline>> state, the pool state will look similar to:
+
+----
+pool: storage
+ state: DEGRADED
+status: One or more devices has been taken offline by the administrator.
+	Sufficient replicas exist for the pool to continue functioning in a
+	degraded state.
+action: Online the device using 'zpool online' or replace the device with
+	'zpool replace'.
+ scrub: none requested
+config:
+
+	NAME        STATE     READ WRITE CKSUM
+	storage     DEGRADED     0     0     0
+	  raidz1    DEGRADED     0     0     0
+	    da0     ONLINE       0     0     0
+	    da1     OFFLINE      0     0     0
+	    da2     ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+
+This indicates that the device was previously taken offline by the administrator with this command:
+
+----
+# zpool offline storage da1
+----
+
+
+Now the system can be powered down to replace [path]``da1``
+.
+When the system is back online, the failed disk can replaced in the pool:
+
+----
+# zpool replace storage da1
+----
+
+
+From here, the status may be checked again, this time without [option]``-x`` so that all pools are shown:
+
+----
+# zpool status storagepool: storage
+ state: ONLINE
+ scrub: resilver completed with 0 errors on Sat Aug 30 19:44:11 2008
+config:
+
+	NAME        STATE     READ WRITE CKSUM
+	storage     ONLINE       0     0     0
+	  raidz1    ONLINE       0     0     0
+	    da0     ONLINE       0     0     0
+	    da1     ONLINE       0     0     0
+	    da2     ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+
+In this example, everything is normal.
+
+[[_zfs_quickstart_data_verification]]
+=== Data Verification
+
+[acronym]``
+ZFS`` uses checksums to verify the integrity of stored data.
+These are enabled automatically upon creation of file systems.
+
+[WARNING]
+====
+Checksums can be disabled, but it is _not_ recommended!  Checksums take very little storage space and provide data integrity.
+Many [acronym]``ZFS`` features will not work properly with checksums disabled.
+There is no noticeable performance gain from disabling these checksums.
+====
+
+
+Checksum verification is known as __scrubbing__.
+Verify the data integrity of the `storage` pool with this command:
+
+----
+# zpool scrub storage
+----
+
+
+The duration of a scrub depends on the amount of data stored.
+Larger amounts of data will take proportionally longer to verify.
+Scrubs are very [acronym]``I/O``	intensive, and only one scrub is allowed to run at a time.
+After the scrub completes, the status can be viewed with [command]``status``:
+
+----
+# zpool status storagepool: storage
+ state: ONLINE
+ scrub: scrub completed with 0 errors on Sat Jan 26 19:57:37 2013
+config:
+
+	NAME        STATE     READ WRITE CKSUM
+	storage     ONLINE       0     0     0
+	  raidz1    ONLINE       0     0     0
+	    da0     ONLINE       0     0     0
+	    da1     ONLINE       0     0     0
+	    da2     ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+
+The completion date of the last scrub operation is displayed to help track when another scrub is required.
+Routine scrubs help protect data from silent corruption and ensure the integrity of the pool.
+
+Refer to  {{< manpage "zfs" "8" >}}
+ and  {{< manpage "zpool" "8" >}}
+ for other [acronym]``ZFS`` options.
+
+[[_zfs_zpool]]
+== zpool Administration
+
+[acronym]``
+ZFS`` administration is divided between two main utilities.
+The [command]``zpool`` utility controls the operation of the pool and deals with adding, removing, replacing, and managing disks.
+The <<_zfs_zfs,[command]``zfs``>> utility deals with creating, destroying, and managing datasets, both <<_zfs_term_filesystem,file systems>> and <<_zfs_term_volume,volumes>>.
+
+[[_zfs_zpool_create]]
+=== Creating and Destroying Storage Pools
+
+
+Creating a [acronym]``ZFS`` storage pool (__zpool__) involves making a number of decisions that are relatively permanent because the structure of the pool cannot be changed after the pool has been created.
+The most important decision is what types of vdevs into which to group the physical disks.
+See the list of <<_zfs_term_vdev,vdev types>> for details about the possible options.
+After the pool has been created, most vdev types do not allow additional disks to be added to the vdev.
+The exceptions are mirrors, which allow additional disks to be added to the vdev, and stripes, which can be upgraded to mirrors by attaching an additional disk to the vdev.
+Although additional vdevs can be added to expand a pool, the layout of the pool cannot be changed after pool creation.
+Instead, the data must be backed up and the pool destroyed and recreated.
+
+Create a simple mirror pool:
+
+----
+# zpool create mypool mirror /dev/ada1 /dev/ada2
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: none requested
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada1    ONLINE       0     0     0
+            ada2    ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+
+Multiple vdevs can be created at once.
+Specify multiple groups of disks separated by the vdev type keyword, `mirror` in this example:
+
+----
+# zpool create mypool mirror /dev/ada1 /dev/ada2 mirror /dev/ada3 /dev/ada4pool: mypool
+ state: ONLINE
+  scan: none requested
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada1    ONLINE       0     0     0
+            ada2    ONLINE       0     0     0
+          mirror-1  ONLINE       0     0     0
+            ada3    ONLINE       0     0     0
+            ada4    ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+
+Pools can also be constructed using partitions rather than whole disks.
+Putting [acronym]``ZFS`` in a separate partition allows the same disk to have other partitions for other purposes.
+In particular, partitions with bootcode and file systems needed for booting can be added.
+This allows booting from disks that are also members of a pool.
+There is no performance penalty on FreeBSD when using a partition rather than a whole disk.
+Using partitions also allows the administrator to _under-provision_ the disks, using less than the full capacity.
+If a future replacement disk of the same nominal size as the original actually has a slightly smaller capacity, the smaller partition will still fit, and the replacement disk can still be used.
+
+Create a <<_zfs_term_vdev_raidz,RAID-Z2>> pool using partitions:
+
+----
+# zpool create mypool raidz2 /dev/ada0p3 /dev/ada1p3 /dev/ada2p3 /dev/ada3p3 /dev/ada4p3 /dev/ada5p3
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: none requested
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          raidz2-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada1p3  ONLINE       0     0     0
+            ada2p3  ONLINE       0     0     0
+            ada3p3  ONLINE       0     0     0
+            ada4p3  ONLINE       0     0     0
+            ada5p3  ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+
+A pool that is no longer needed can be destroyed so that the disks can be reused.
+Destroying a pool involves first unmounting all of the datasets in that pool.
+If the datasets are in use, the unmount operation will fail and the pool will not be destroyed.
+The destruction of the pool can be forced with [option]``-f``, but this can cause undefined behavior in applications which had open files on those datasets.
+
+[[_zfs_zpool_attach]]
+=== Adding and Removing Devices
+
+
+There are two cases for adding disks to a zpool: attaching a disk to an existing vdev with [command]``zpool attach``, or adding vdevs to the pool with [command]``zpool add``.
+Only some <<_zfs_term_vdev,vdev types>> allow disks to be added to the vdev after creation.
+
+A pool created with a single disk lacks redundancy.
+Corruption can be detected but not repaired, because there is no other copy of the data.
+The <<_zfs_term_copies,copies>> property may be able to recover from a small failure such as a bad sector, but does not provide the same level of protection as mirroring or [acronym]``RAID-Z``.
+Starting with a pool consisting of a single disk vdev, [command]``zpool attach`` can be used to add an additional disk to the vdev, creating a mirror. [command]``zpool attach`` can also be used to add additional disks to a mirror group, increasing redundancy and read performance.
+If the disks being used for the pool are partitioned, replicate the layout of the first disk on to the second, [command]``gpart backup`` and [command]``gpart restore`` can be used to make this process easier.
+
+Upgrade the single disk (stripe) vdev [replaceable]``ada0p3`` to a mirror by attaching [replaceable]``ada1p3``:
+
+----
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: none requested
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          ada0p3    ONLINE       0     0     0
+
+errors: No known data errors
+# zpool attach mypool ada0p3 ada1p3Make sure to wait until resilver is done before rebooting.
+
+If you boot from pool 'mypool', you may need to update
+boot code on newly attached disk 'ada1p3'.
+
+Assuming you use GPT partitioning and 'da0' is your new boot disk
+you may use the following command:
+
+        gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 da0
+# gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 ada1bootcode written to ada1
+# zpool statuspool: mypool
+ state: ONLINE
+status: One or more devices is currently being resilvered.  The pool will
+        continue to function, possibly in a degraded state.
+action: Wait for the resilver to complete.
+  scan: resilver in progress since Fri May 30 08:19:19 2014
+        527M scanned out of 781M at 47.9M/s, 0h0m to go
+        527M resilvered, 67.53% done
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada1p3  ONLINE       0     0     0  (resilvering)
+
+errors: No known data errors
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: resilvered 781M in 0h0m with 0 errors on Fri May 30 08:15:58 2014
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada1p3  ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+
+When adding disks to the existing vdev is not an option, as for [acronym]``RAID-Z``, an alternative method is to add another vdev to the pool.
+Additional vdevs provide higher performance, distributing writes across the vdevs.
+Each vdev is responsible for providing its own redundancy.
+It is possible, but discouraged, to mix vdev types, like `mirror` and ``RAID-Z``.
+Adding a non-redundant vdev to a pool containing mirror or [acronym]``RAID-Z`` vdevs risks the data on the entire pool.
+Writes are distributed, so the failure of the non-redundant disk will result in the loss of a fraction of every block that has been written to the pool.
+
+Data is striped across each of the vdevs.
+For example, with two mirror vdevs, this is effectively a [acronym]``RAID`` 10 that stripes writes across two sets of mirrors.
+Space is allocated so that each vdev reaches 100% full at the same time.
+There is a performance penalty if the vdevs have different amounts of free space, as a disproportionate amount of the data is written to the less full vdev.
+
+When attaching additional devices to a boot pool, remember to update the bootcode.
+
+Attach a second mirror group ([path]``ada2p3``
+	and [path]``ada3p3``
+) to the existing mirror:
+
+----
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: resilvered 781M in 0h0m with 0 errors on Fri May 30 08:19:35 2014
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada1p3  ONLINE       0     0     0
+
+errors: No known data errors
+# zpool add mypool mirror ada2p3 ada3p3
+# gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 ada2bootcode written to ada2
+# gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 ada3bootcode written to ada3
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: scrub repaired 0 in 0h0m with 0 errors on Fri May 30 08:29:51 2014
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada1p3  ONLINE       0     0     0
+          mirror-1  ONLINE       0     0     0
+            ada2p3  ONLINE       0     0     0
+            ada3p3  ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+
+Currently, vdevs cannot be removed from a pool, and disks can only be removed from a mirror if there is enough remaining redundancy.
+If only one disk in a mirror group remains, it ceases to be a mirror and reverts to being a stripe, risking the entire pool if that remaining disk fails.
+
+Remove a disk from a three-way mirror group:
+
+----
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: scrub repaired 0 in 0h0m with 0 errors on Fri May 30 08:29:51 2014
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada1p3  ONLINE       0     0     0
+            ada2p3  ONLINE       0     0     0
+
+errors: No known data errors
+# zpool detach mypool ada2p3
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: scrub repaired 0 in 0h0m with 0 errors on Fri May 30 08:29:51 2014
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada1p3  ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+[[_zfs_zpool_status]]
+=== Checking the Status of a Pool
+
+
+Pool status is important.
+If a drive goes offline or a read, write, or checksum error is detected, the corresponding error count increases.
+The [command]``status`` output shows the configuration and status of each device in the pool and the status of the entire pool.
+Actions that need to be taken and details about the last <<_zfs_zpool_scrub,[command]``scrub``>>	are also shown.
+
+----
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: scrub repaired 0 in 2h25m with 0 errors on Sat Sep 14 04:25:50 2013
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          raidz2-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada1p3  ONLINE       0     0     0
+            ada2p3  ONLINE       0     0     0
+            ada3p3  ONLINE       0     0     0
+            ada4p3  ONLINE       0     0     0
+            ada5p3  ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+[[_zfs_zpool_clear]]
+=== Clearing Errors
+
+
+When an error is detected, the read, write, or checksum counts are incremented.
+The error message can be cleared and the counts reset with [command]``zpool clear
+	  [replaceable]``mypool````.
+Clearing the error state can be important for automated scripts that alert the administrator when the pool encounters an error.
+Further errors may not be reported if the old errors are not cleared.
+
+[[_zfs_zpool_replace]]
+=== Replacing a Functioning Device
+
+
+There are a number of situations where it may be desirable to replace one disk with a different disk.
+When replacing a working disk, the process keeps the old disk online during the replacement.
+The pool never enters a <<_zfs_term_degraded,degraded>> state, reducing the risk of data loss. [command]``zpool replace`` copies all of the data from the old disk to the new one.
+After the operation completes, the old disk is disconnected from the vdev.
+If the new disk is larger than the old disk, it may be possible to grow the zpool, using the new space.
+See <<_zfs_zpool_online,Growing a Pool>>.
+
+Replace a functioning device in the pool:
+
+----
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: none requested
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada1p3  ONLINE       0     0     0
+
+errors: No known data errors
+# zpool replace mypool ada1p3 ada2p3Make sure to wait until resilver is done before rebooting.
+
+If you boot from pool 'zroot', you may need to update
+boot code on newly attached disk 'ada2p3'.
+
+Assuming you use GPT partitioning and 'da0' is your new boot disk
+you may use the following command:
+
+        gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 da0
+# gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 ada2
+# zpool statuspool: mypool
+ state: ONLINE
+status: One or more devices is currently being resilvered.  The pool will
+        continue to function, possibly in a degraded state.
+action: Wait for the resilver to complete.
+  scan: resilver in progress since Mon Jun  2 14:21:35 2014
+        604M scanned out of 781M at 46.5M/s, 0h0m to go
+        604M resilvered, 77.39% done
+config:
+
+        NAME             STATE     READ WRITE CKSUM
+        mypool           ONLINE       0     0     0
+          mirror-0       ONLINE       0     0     0
+            ada0p3       ONLINE       0     0     0
+            replacing-1  ONLINE       0     0     0
+              ada1p3     ONLINE       0     0     0
+              ada2p3     ONLINE       0     0     0  (resilvering)
+
+errors: No known data errors
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: resilvered 781M in 0h0m with 0 errors on Mon Jun  2 14:21:52 2014
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada2p3  ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+[[_zfs_zpool_resilver]]
+=== Dealing with Failed Devices
+
+
+When a disk in a pool fails, the vdev to which the disk belongs enters the <<_zfs_term_degraded,degraded>> state.
+All of the data is still available, but performance may be reduced because missing data must be calculated from the available redundancy.
+To restore the vdev to a fully functional state, the failed physical device must be replaced. [acronym]``ZFS`` is then instructed to begin the <<_zfs_term_resilver,resilver>> operation.
+Data that was on the failed device is recalculated from available redundancy and written to the replacement device.
+After completion, the vdev returns to <<_zfs_term_online,online>> status.
+
+If the vdev does not have any redundancy, or if multiple devices have failed and there is not enough redundancy to compensate, the pool enters the <<_zfs_term_faulted,faulted>> state.
+If a sufficient number of devices cannot be reconnected to the pool, the pool becomes inoperative and data must be restored from backups.
+
+When replacing a failed disk, the name of the failed disk is replaced with the [acronym]``GUID`` of the device.
+A new device name parameter for [command]``zpool replace`` is not required if the replacement device has the same device name.
+
+Replace a failed disk using [command]``zpool replace``:
+
+----
+# zpool statuspool: mypool
+ state: DEGRADED
+status: One or more devices could not be opened.  Sufficient replicas exist for
+        the pool to continue functioning in a degraded state.
+action: Attach the missing device and online it using 'zpool online'.
+   see: http://illumos.org/msg/ZFS-8000-2Q
+  scan: none requested
+config:
+
+        NAME                    STATE     READ WRITE CKSUM
+        mypool                  DEGRADED     0     0     0
+          mirror-0              DEGRADED     0     0     0
+            ada0p3              ONLINE       0     0     0
+            316502962686821739  UNAVAIL      0     0     0  was /dev/ada1p3
+
+errors: No known data errors
+# zpool replace mypool 316502962686821739 ada2p3
+# zpool statuspool: mypool
+ state: DEGRADED
+status: One or more devices is currently being resilvered.  The pool will
+        continue to function, possibly in a degraded state.
+action: Wait for the resilver to complete.
+  scan: resilver in progress since Mon Jun  2 14:52:21 2014
+        641M scanned out of 781M at 49.3M/s, 0h0m to go
+        640M resilvered, 82.04% done
+config:
+
+        NAME                        STATE     READ WRITE CKSUM
+        mypool                      DEGRADED     0     0     0
+          mirror-0                  DEGRADED     0     0     0
+            ada0p3                  ONLINE       0     0     0
+            replacing-1             UNAVAIL      0     0     0
+              15732067398082357289  UNAVAIL      0     0     0  was /dev/ada1p3/old
+              ada2p3                ONLINE       0     0     0  (resilvering)
+
+errors: No known data errors
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: resilvered 781M in 0h0m with 0 errors on Mon Jun  2 14:52:38 2014
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada2p3  ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+[[_zfs_zpool_scrub]]
+=== Scrubbing a Pool
+
+
+It is recommended that pools be <<_zfs_term_scrub,scrubbed>> regularly, ideally at least once every month.
+The [command]``scrub`` operation is very disk-intensive and will reduce performance while running.
+Avoid high-demand periods when scheduling [command]``scrub`` or use <<_zfs_advanced_tuning_scrub_delay,[var]``vfs.zfs.scrub_delay``>>	to adjust the relative priority of the [command]``scrub`` to prevent it interfering with other workloads.
+
+----
+# zpool scrub mypool
+# zpool statuspool: mypool
+ state: ONLINE
+  scan: scrub in progress since Wed Feb 19 20:52:54 2014
+        116G scanned out of 8.60T at 649M/s, 3h48m to go
+        0 repaired, 1.32% done
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          raidz2-0  ONLINE       0     0     0
+            ada0p3  ONLINE       0     0     0
+            ada1p3  ONLINE       0     0     0
+            ada2p3  ONLINE       0     0     0
+            ada3p3  ONLINE       0     0     0
+            ada4p3  ONLINE       0     0     0
+            ada5p3  ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+
+In the event that a scrub operation needs to be cancelled, issue [command]``zpool scrub -s
+	  [replaceable]``mypool````.
+
+[[_zfs_zpool_selfheal]]
+=== Self-Healing
+
+
+The checksums stored with data blocks enable the file system to __self-heal__.
+This feature will automatically repair data whose checksum does not match the one recorded on another device that is part of the storage pool.
+For example, a mirror with two disks where one drive is starting to malfunction and cannot properly store the data any more.
+This is even worse when the data has not been accessed for a long time, as with long term archive storage.
+Traditional file systems need to run algorithms that check and repair the data like  {{< manpage "fsck" "8" >}}
+.
+These commands take time, and in severe cases, an administrator has to manually decide which repair operation must be performed.
+When [acronym]``ZFS`` detects a data block with a checksum that does not match, it tries to read the data from the mirror disk.
+If that disk can provide the correct data, it will not only give that data to the application requesting it, but also correct the wrong data on the disk that had the bad checksum.
+This happens without any interaction from a system administrator during normal pool operation.
+
+The next example demonstrates this self-healing behavior.
+A mirrored pool of disks [path]``/dev/ada0``
+ and [path]``/dev/ada1``
+ is created.
+
+----
+# zpool create healer mirror /dev/ada0 /dev/ada1
+# zpool status healerpool: healer
+ state: ONLINE
+  scan: none requested
+config:
+
+    NAME        STATE     READ WRITE CKSUM
+    healer      ONLINE       0     0     0
+      mirror-0  ONLINE       0     0     0
+       ada0     ONLINE       0     0     0
+       ada1     ONLINE       0     0     0
+
+errors: No known data errors
+# zpool listNAME     SIZE  ALLOC   FREE   CKPOINT  EXPANDSZ   FRAG   CAP  DEDUP  HEALTH  ALTROOT
+healer   960M  92.5K   960M         -         -     0%    0%  1.00x  ONLINE  -
+----
+
+
+Some important data that to be protected from data errors using the self-healing feature is copied to the pool.
+A checksum of the pool is created for later comparison.
+
+----
+# cp /some/important/data /healer
+# zfs listNAME     SIZE  ALLOC   FREE    CAP  DEDUP  HEALTH  ALTROOT
+healer   960M  67.7M   892M     7%  1.00x  ONLINE  -
+# sha1 /healer > checksum.txt
+# cat checksum.txtSHA1 (/healer) = 2753eff56d77d9a536ece6694bf0a82740344d1f
+----
+
+
+Data corruption is simulated by writing random data to the beginning of one of the disks in the mirror.
+To prevent [acronym]``ZFS`` from healing the data as soon as it is detected, the pool is exported before the corruption and imported again afterwards.
+
+[WARNING]
+====
+This is a dangerous operation that can destroy vital data.
+It is shown here for demonstrational purposes only and should not be attempted during normal operation of a storage pool.
+Nor should this intentional corruption example be run on any disk with a different file system on it.
+Do not use any other disk device names other than the ones that are part of the pool.
+Make certain that proper backups of the pool are created before running the command!
+====
+
+----
+# zpool export healer
+# dd if=/dev/random of=/dev/ada1 bs=1m count=200200+0 records in
+200+0 records out
+209715200 bytes transferred in 62.992162 secs (3329227 bytes/sec)
+# zpool import healer
+----
+
+
+The pool status shows that one device has experienced an error.
+Note that applications reading data from the pool did not receive any incorrect data. [acronym]``ZFS``	provided data from the [path]``ada0``
+ device with the correct checksums.
+The device with the wrong checksum can be found easily as the `CKSUM` column contains a nonzero value.
+
+----
+# zpool status healerpool: healer
+   state: ONLINE
+  status: One or more devices has experienced an unrecoverable error.  An
+          attempt was made to correct the error.  Applications are unaffected.
+  action: Determine if the device needs to be replaced, and clear the errors
+          using 'zpool clear' or replace the device with 'zpool replace'.
+     see: http://illumos.org/msg/ZFS-8000-4J
+    scan: none requested
+  config:
+
+      NAME        STATE     READ WRITE CKSUM
+      healer      ONLINE       0     0     0
+        mirror-0  ONLINE       0     0     0
+         ada0     ONLINE       0     0     0
+         ada1     ONLINE       0     0     1
+
+errors: No known data errors
+----
+
+
+The error was detected and handled by using the redundancy present in the unaffected [path]``ada0``
+ mirror disk.
+A checksum comparison with the original one will reveal whether the pool is consistent again.
+
+----
+# sha1 /healer >> checksum.txt
+# cat checksum.txtSHA1 (/healer) = 2753eff56d77d9a536ece6694bf0a82740344d1f
+SHA1 (/healer) = 2753eff56d77d9a536ece6694bf0a82740344d1f
+----
+
+
+The two checksums that were generated before and after the intentional tampering with the pool data still match.
+This shows how [acronym]``ZFS`` is capable of detecting and correcting any errors automatically when the checksums differ.
+Note that this is only possible when there is enough redundancy present in the pool.
+A pool consisting of a single device has no self-healing capabilities.
+That is also the reason why checksums are so important in [acronym]``ZFS`` and should not be disabled for any reason.
+No  {{< manpage "fsck" "8" >}}
+ or similar file system consistency check program is required to detect and correct this and the pool was still available during the time there was a problem.
+A scrub operation is now required to overwrite the corrupted data on [path]``ada1``
+.
+
+----
+# zpool scrub healer
+# zpool status healerpool: healer
+ state: ONLINE
+status: One or more devices has experienced an unrecoverable error.  An
+            attempt was made to correct the error.  Applications are unaffected.
+action: Determine if the device needs to be replaced, and clear the errors
+            using 'zpool clear' or replace the device with 'zpool replace'.
+   see: http://illumos.org/msg/ZFS-8000-4J
+  scan: scrub in progress since Mon Dec 10 12:23:30 2012
+        10.4M scanned out of 67.0M at 267K/s, 0h3m to go
+        9.63M repaired, 15.56% done
+config:
+
+    NAME        STATE     READ WRITE CKSUM
+    healer      ONLINE       0     0     0
+      mirror-0  ONLINE       0     0     0
+       ada0     ONLINE       0     0     0
+       ada1     ONLINE       0     0   627  (repairing)
+
+errors: No known data errors
+----
+
+
+The scrub operation reads data from [path]``ada0``
+ and rewrites any data with an incorrect checksum on [path]``ada1``
+.
+This is indicated by the `(repairing)` output from [command]``zpool status``.
+After the operation is complete, the pool status changes to:
+
+----
+# zpool status healerpool: healer
+ state: ONLINE
+status: One or more devices has experienced an unrecoverable error.  An
+        attempt was made to correct the error.  Applications are unaffected.
+action: Determine if the device needs to be replaced, and clear the errors
+             using 'zpool clear' or replace the device with 'zpool replace'.
+   see: http://illumos.org/msg/ZFS-8000-4J
+  scan: scrub repaired 66.5M in 0h2m with 0 errors on Mon Dec 10 12:26:25 2012
+config:
+
+    NAME        STATE     READ WRITE CKSUM
+    healer      ONLINE       0     0     0
+      mirror-0  ONLINE       0     0     0
+       ada0     ONLINE       0     0     0
+       ada1     ONLINE       0     0 2.72K
+
+errors: No known data errors
+----
+
+
+After the scrub operation completes and all the data has been synchronized from [path]``ada0``
+ to [path]``ada1``
+, the error messages can be <<_zfs_zpool_clear,cleared>> from the pool status by running [command]``zpool clear``.
+
+----
+# zpool clear healer
+# zpool status healerpool: healer
+ state: ONLINE
+  scan: scrub repaired 66.5M in 0h2m with 0 errors on Mon Dec 10 12:26:25 2012
+config:
+
+    NAME        STATE     READ WRITE CKSUM
+    healer      ONLINE       0     0     0
+      mirror-0  ONLINE       0     0     0
+       ada0     ONLINE       0     0     0
+       ada1     ONLINE       0     0     0
+
+errors: No known data errors
+----
+
+
+The pool is now back to a fully working state and all the errors have been cleared.
+
+[[_zfs_zpool_online]]
+=== Growing a Pool
+
+
+The usable size of a redundant pool is limited by the capacity of the smallest device in each vdev.
+The smallest device can be replaced with a larger device.
+After completing a <<_zfs_zpool_replace,replace>> or <<_zfs_term_resilver,resilver>> operation, the pool can grow to use the capacity of the new device.
+For example, consider a mirror of a 1{nbsp}TB drive and a 2{nbsp}TB drive.
+The usable space is 1{nbsp}TB.
+When the 1{nbsp}TB drive is replaced with another 2{nbsp}TB drive, the resilvering process copies the existing data onto the new drive.
+Because both of the devices now have 2{nbsp}TB capacity, the mirror's available space can be grown to 2{nbsp}TB.
+
+Expansion is triggered by using [command]``zpool online -e`` on each device.
+After expansion of all devices, the additional space becomes available to the pool.
+
+[[_zfs_zpool_import]]
+=== Importing and Exporting Pools
+
+
+Pools are _exported_ before moving them to another system.
+All datasets are unmounted, and each device is marked as exported but still locked so it cannot be used by other disk subsystems.
+This allows pools to be _imported_ on other machines, other operating systems that support [acronym]``ZFS``, and even different hardware architectures (with some caveats, see  {{< manpage "zpool" "8" >}}
+).  When a dataset has open files, [command]``zpool export -f`` can be used to force the export of a pool.
+Use this with caution.
+The datasets are forcibly unmounted, potentially resulting in unexpected behavior by the applications which had open files on those datasets.
+
+Export a pool that is not in use:
+
+----
+# zpool export mypool
+----
+
+
+Importing a pool automatically mounts the datasets.
+This may not be the desired behavior, and can be prevented with [command]``zpool import -N``. [command]``zpool import -o`` sets temporary properties for this import only. [command]``zpool import altroot=`` allows importing a pool with a base mount point instead of the root of the file system.
+If the pool was last used on a different system and was not properly exported, an import might have to be forced with [command]``zpool import -f``. [command]``zpool import -a`` imports all pools that do not appear to be in use by another system.
+
+List all available pools for import:
+
+----
+# zpool importpool: mypool
+     id: 9930174748043525076
+  state: ONLINE
+ action: The pool can be imported using its name or numeric identifier.
+ config:
+
+        mypool      ONLINE
+          ada2p3    ONLINE
+----
+
+
+Import the pool with an alternative root directory:
+
+----
+# zpool import -o altroot=/mnt mypool
+# zfs listzfs list
+NAME                 USED  AVAIL  REFER  MOUNTPOINT
+mypool               110K  47.0G    31K  /mnt/mypool
+----
+
+[[_zfs_zpool_upgrade]]
+=== Upgrading a Storage Pool
+
+
+After upgrading FreeBSD, or if a pool has been imported from a system using an older version of [acronym]``ZFS``, the pool can be manually upgraded to the latest version of [acronym]``ZFS`` to support newer features.
+Consider whether the pool may ever need to be imported on an older system before upgrading.
+Upgrading is a one-way process.
+Older pools can be upgraded, but pools with newer features cannot be downgraded.
+
+Upgrade a v28 pool to support ``Feature Flags``:
+
+----
+# zpool statuspool: mypool
+ state: ONLINE
+status: The pool is formatted using a legacy on-disk format.  The pool can
+        still be used, but some features are unavailable.
+action: Upgrade the pool using 'zpool upgrade'.  Once this is done, the
+        pool will no longer be accessible on software that does not support feat
+        flags.
+  scan: none requested
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+	    ada0    ONLINE       0     0     0
+	    ada1    ONLINE       0     0     0
+
+errors: No known data errors
+# zpool upgradeThis system supports ZFS pool feature flags.
+
+The following pools are formatted with legacy version numbers and can
+be upgraded to use feature flags.  After being upgraded, these pools
+will no longer be accessible by software that does not support feature
+flags.
+
+VER  POOL
+---  ------------
+28   mypool
+
+Use 'zpool upgrade -v' for a list of available legacy versions.
+Every feature flags pool has all supported features enabled.
+# zpool upgrade mypoolThis system supports ZFS pool feature flags.
+
+Successfully upgraded 'mypool' from version 28 to feature flags.
+Enabled the following features on 'mypool':
+  async_destroy
+  empty_bpobj
+  lz4_compress
+  multi_vdev_crash_dump
+----
+
+
+The newer features of [acronym]``ZFS`` will not be available until [command]``zpool upgrade`` has completed.
+ [command]``zpool upgrade -v`` can be used to see what new features will be provided by upgrading, as well as which features are already supported.
+
+Upgrade a pool to support additional feature flags:
+
+----
+# zpool statuspool: mypool
+ state: ONLINE
+status: Some supported features are not enabled on the pool. The pool can
+        still be used, but some features are unavailable.
+action: Enable all features using 'zpool upgrade'. Once this is done,
+        the pool may no longer be accessible by software that does not support
+        the features. See zpool-features(7) for details.
+  scan: none requested
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        mypool      ONLINE       0     0     0
+          mirror-0  ONLINE       0     0     0
+	    ada0    ONLINE       0     0     0
+	    ada1    ONLINE       0     0     0
+
+errors: No known data errors
+# zpool upgradeThis system supports ZFS pool feature flags.
+
+All pools are formatted using feature flags.
+
+
+Some supported features are not enabled on the following pools. Once a
+feature is enabled the pool may become incompatible with software
+that does not support the feature. See zpool-features(7) for details.
+
+POOL  FEATURE
+---------------
+zstore
+      multi_vdev_crash_dump
+      spacemap_histogram
+      enabled_txg
+      hole_birth
+      extensible_dataset
+      bookmarks
+      filesystem_limits
+# zpool upgrade mypoolThis system supports ZFS pool feature flags.
+
+Enabled the following features on 'mypool':
+  spacemap_histogram
+  enabled_txg
+  hole_birth
+  extensible_dataset
+  bookmarks
+  filesystem_limits
+----
+
+[WARNING]
+====
+The boot code on systems that boot from a pool must be updated to support the new pool version.
+Use [command]``gpart bootcode`` on the partition that contains the boot code.
+There are two types of bootcode available, depending on way the system boots: [acronym]``GPT`` (the most common option) and [acronym]``EFI`` (for more modern systems).
+
+For legacy boot using GPT, use the following command:
+
+----
+# gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 ada1
+----
+
+For systems using EFI to boot, execute the following command:
+
+----
+# gpart bootcode -p /boot/boot1.efifat -i 1 ada1
+----
+
+Apply the bootcode to all bootable disks in the pool.
+See  {{< manpage "gpart" "8" >}}
+ for more information.
+====
+
+[[_zfs_zpool_history]]
+=== Displaying Recorded Pool History
+
+
+Commands that modify the pool are recorded.
+Recorded actions include the creation of datasets, changing properties, or replacement of a disk.
+This history is useful for reviewing how a pool was created and which user performed a specific action and when.
+History is not kept in a log file, but is part of the pool itself.
+The command to review this history is aptly named [command]``zpool history``:
+
+----
+# zpool historyHistory for 'tank':
+2013-02-26.23:02:35 zpool create tank mirror /dev/ada0 /dev/ada1
+2013-02-27.18:50:58 zfs set atime=off tank
+2013-02-27.18:51:09 zfs set checksum=fletcher4 tank
+2013-02-27.18:51:18 zfs create tank/backup
+----
+
+
+The output shows [command]``zpool`` and [command]``zfs`` commands that were executed on the pool along with a timestamp.
+Only commands that alter the pool in some way are recorded.
+Commands like [command]``zfs list`` are not included.
+When no pool name is specified, the history of all pools is displayed.
+
+[command]``zpool history`` can show even more information when the options [option]``-i`` or [option]``-l`` are provided.
+ [option]``-i``	displays user-initiated events as well as internally logged [acronym]``ZFS`` events.
+
+----
+# zpool history -iHistory for 'tank':
+2013-02-26.23:02:35 [internal pool create txg:5] pool spa 28; zfs spa 28; zpl 5;uts  9.1-RELEASE 901000 amd64
+2013-02-27.18:50:53 [internal property set txg:50] atime=0 dataset = 21
+2013-02-27.18:50:58 zfs set atime=off tank
+2013-02-27.18:51:04 [internal property set txg:53] checksum=7 dataset = 21
+2013-02-27.18:51:09 zfs set checksum=fletcher4 tank
+2013-02-27.18:51:13 [internal create txg:55] dataset = 39
+2013-02-27.18:51:18 zfs create tank/backup
+----
+
+
+More details can be shown by adding [option]``-l``.
+History records are shown in a long format, including information like the name of the user who issued the command and the hostname on which the change was made.
+
+----
+# zpool history -lHistory for 'tank':
+2013-02-26.23:02:35 zpool create tank mirror /dev/ada0 /dev/ada1 [user 0 (root) on :global]
+2013-02-27.18:50:58 zfs set atime=off tank [user 0 (root) on myzfsbox:global]
+2013-02-27.18:51:09 zfs set checksum=fletcher4 tank [user 0 (root) on myzfsbox:global]
+2013-02-27.18:51:18 zfs create tank/backup [user 0 (root) on myzfsbox:global]
+----
+
+
+The output shows that the [username]``root``
+ user created the mirrored pool with disks [path]``/dev/ada0``
+ and [path]``/dev/ada1``
+.
+The hostname [systemname]``myzfsbox``
+ is also shown in the commands after the pool's creation.
+The hostname display becomes important when the pool is exported from one system and imported on another.
+The commands that are issued on the other system can clearly be distinguished by the hostname that is recorded for each command.
+
+Both options to [command]``zpool history`` can be combined to give the most detailed information possible for any given pool.
+Pool history provides valuable information when tracking down the actions that were performed or when more detailed output is needed for debugging.
+
+[[_zfs_zpool_iostat]]
+=== Performance Monitoring
+
+
+A built-in monitoring system can display pool [acronym]``I/O`` statistics in real time.
+It shows the amount of free and used space on the pool, how many read and write operations are being performed per second, and how much [acronym]``I/O`` bandwidth is currently being utilized.
+By default, all pools in the system are monitored and displayed.
+A pool name can be provided to limit monitoring to just that pool.
+A basic example:
+
+----
+# zpool iostatcapacity     operations    bandwidth
+pool        alloc   free   read  write   read  write
+----------  -----  -----  -----  -----  -----  -----
+data         288G  1.53T      2     11  11.3K  57.1K
+----
+
+
+To continuously monitor [acronym]``I/O`` activity, a number can be specified as the last parameter, indicating a interval in seconds to wait between updates.
+The next statistic line is printed after each interval.
+Press kbd:[Ctrl+C]
+ to stop this continuous monitoring.
+Alternatively, give a second number on the command line after the interval to specify the total number of statistics to display.
+
+Even more detailed [acronym]``I/O`` statistics can be displayed with [option]``-v``.
+Each device in the pool is shown with a statistics line.
+This is useful in seeing how many read and write operations are being performed on each device, and can help determine if any individual device is slowing down the pool.
+This example shows a mirrored pool with two devices:
+
+----
+# zpool iostat -vcapacity     operations    bandwidth
+pool                     alloc   free   read  write   read  write
+-----------------------  -----  -----  -----  -----  -----  -----
+data                      288G  1.53T      2     12  9.23K  61.5K
+  mirror                  288G  1.53T      2     12  9.23K  61.5K
+    ada1                     -      -      0      4  5.61K  61.7K
+    ada2                     -      -      1      4  5.04K  61.7K
+-----------------------  -----  -----  -----  -----  -----  -----
+----
+
+[[_zfs_zpool_split]]
+=== Splitting a Storage Pool
+
+
+A pool consisting of one or more mirror vdevs can be split into two pools.
+Unless otherwise specified, the last member of each mirror is detached and used to create a new pool containing the same data.
+The operation should first be attempted with [option]``-n``.
+The details of the proposed operation are displayed without it actually being performed.
+This helps confirm that the operation will do what the user intends.
+
+[[_zfs_zfs]]
+== zfs Administration
+
+
+The [command]``zfs`` utility is responsible for creating, destroying, and managing all [acronym]``ZFS`` datasets that exist within a pool.
+The pool is managed using <<_zfs_zpool,[command]``zpool``>>.
+
+[[_zfs_zfs_create]]
+=== Creating and Destroying Datasets
+
+
+Unlike traditional disks and volume managers, space in [acronym]``ZFS`` is _not_	preallocated.
+With traditional file systems, after all of the space is partitioned and assigned, there is no way to add an additional file system without adding a new disk.
+With [acronym]``ZFS``, new file systems can be created at any time.
+Each <<_zfs_term_dataset,_dataset_>>	has properties including features like compression, deduplication, caching, and quotas, as well as other useful properties like readonly, case sensitivity, network file sharing, and a mount point.
+Datasets can be nested inside each other, and child datasets will inherit properties from their parents.
+Each dataset can be administered, <<_zfs_zfs_allow,delegated>>, <<_zfs_zfs_send,replicated>>, <<_zfs_zfs_snapshot,snapshotted>>, <<_zfs_zfs_jail,jailed>>, and destroyed as a unit.
+There are many advantages to creating a separate dataset for each different type or set of files.
+The only drawbacks to having an extremely large number of datasets is that some commands like [command]``zfs list`` will be slower, and the mounting of hundreds or even thousands of datasets can slow the FreeBSD boot process.
+
+Create a new dataset and enable <<_zfs_term_compression_lz4,LZ4
+	  compression>> on it:
+
+----
+# zfs listNAME                  USED  AVAIL  REFER  MOUNTPOINT
+mypool                781M  93.2G   144K  none
+mypool/ROOT           777M  93.2G   144K  none
+mypool/ROOT/default   777M  93.2G   777M  /
+mypool/tmp            176K  93.2G   176K  /tmp
+mypool/usr            616K  93.2G   144K  /usr
+mypool/usr/home       184K  93.2G   184K  /usr/home
+mypool/usr/ports      144K  93.2G   144K  /usr/ports
+mypool/usr/src        144K  93.2G   144K  /usr/src
+mypool/var           1.20M  93.2G   608K  /var
+mypool/var/crash      148K  93.2G   148K  /var/crash
+mypool/var/log        178K  93.2G   178K  /var/log
+mypool/var/mail       144K  93.2G   144K  /var/mail
+mypool/var/tmp        152K  93.2G   152K  /var/tmp
+# zfs create -o compress=lz4 mypool/usr/mydataset
+# zfs listNAME                   USED  AVAIL  REFER  MOUNTPOINT
+mypool                 781M  93.2G   144K  none
+mypool/ROOT            777M  93.2G   144K  none
+mypool/ROOT/default    777M  93.2G   777M  /
+mypool/tmp             176K  93.2G   176K  /tmp
+mypool/usr             704K  93.2G   144K  /usr
+mypool/usr/home        184K  93.2G   184K  /usr/home
+mypool/usr/mydataset  87.5K  93.2G  87.5K  /usr/mydataset
+mypool/usr/ports       144K  93.2G   144K  /usr/ports
+mypool/usr/src         144K  93.2G   144K  /usr/src
+mypool/var            1.20M  93.2G   610K  /var
+mypool/var/crash       148K  93.2G   148K  /var/crash
+mypool/var/log         178K  93.2G   178K  /var/log
+mypool/var/mail        144K  93.2G   144K  /var/mail
+mypool/var/tmp         152K  93.2G   152K  /var/tmp
+----
+
+
+Destroying a dataset is much quicker than deleting all of the files that reside on the dataset, as it does not involve scanning all of the files and updating all of the corresponding metadata.
+
+Destroy the previously-created dataset:
+
+----
+# zfs listNAME                   USED  AVAIL  REFER  MOUNTPOINT
+mypool                 880M  93.1G   144K  none
+mypool/ROOT            777M  93.1G   144K  none
+mypool/ROOT/default    777M  93.1G   777M  /
+mypool/tmp             176K  93.1G   176K  /tmp
+mypool/usr             101M  93.1G   144K  /usr
+mypool/usr/home        184K  93.1G   184K  /usr/home
+mypool/usr/mydataset   100M  93.1G   100M  /usr/mydataset
+mypool/usr/ports       144K  93.1G   144K  /usr/ports
+mypool/usr/src         144K  93.1G   144K  /usr/src
+mypool/var            1.20M  93.1G   610K  /var
+mypool/var/crash       148K  93.1G   148K  /var/crash
+mypool/var/log         178K  93.1G   178K  /var/log
+mypool/var/mail        144K  93.1G   144K  /var/mail
+mypool/var/tmp         152K  93.1G   152K  /var/tmp
+# zfs destroy mypool/usr/mydataset
+# zfs listNAME                  USED  AVAIL  REFER  MOUNTPOINT
+mypool                781M  93.2G   144K  none
+mypool/ROOT           777M  93.2G   144K  none
+mypool/ROOT/default   777M  93.2G   777M  /
+mypool/tmp            176K  93.2G   176K  /tmp
+mypool/usr            616K  93.2G   144K  /usr
+mypool/usr/home       184K  93.2G   184K  /usr/home
+mypool/usr/ports      144K  93.2G   144K  /usr/ports
+mypool/usr/src        144K  93.2G   144K  /usr/src
+mypool/var           1.21M  93.2G   612K  /var
+mypool/var/crash      148K  93.2G   148K  /var/crash
+mypool/var/log        178K  93.2G   178K  /var/log
+mypool/var/mail       144K  93.2G   144K  /var/mail
+mypool/var/tmp        152K  93.2G   152K  /var/tmp
+----
+
+
+In modern versions of [acronym]``ZFS``, [command]``zfs destroy`` is asynchronous, and the free space might take several minutes to appear in the pool.
+Use [command]``zpool get freeing
+	  [replaceable]``poolname```` to see the `freeing` property, indicating how many datasets are having their blocks freed in the background.
+If there are child datasets, like <<_zfs_term_snapshot,snapshots>> or other datasets, then the parent cannot be destroyed.
+To destroy a dataset and all of its children, use [option]``-r`` to recursively destroy the dataset and all of its children.
+Use [option]``-n``[option]``-v`` to list datasets and snapshots that would be destroyed by this operation, but do not actually destroy anything.
+Space that would be reclaimed by destruction of snapshots is also shown.
+
+[[_zfs_zfs_volume]]
+=== Creating and Destroying Volumes
+
+
+A volume is a special type of dataset.
+Rather than being mounted as a file system, it is exposed as a block device under [path]``/dev/zvol/poolname/dataset``
+.
+This allows the volume to be used for other file systems, to back the disks of a virtual machine, or to be exported using protocols like [acronym]``iSCSI`` or [acronym]``HAST``.
+
+A volume can be formatted with any file system, or used without a file system to store raw data.
+To the user, a volume appears to be a regular disk.
+Putting ordinary file systems on these _zvols_ provides features that ordinary disks or file systems do not normally have.
+For example, using the compression property on a 250{nbsp}MB volume allows creation of a compressed [acronym]``FAT``	file system.
+
+----
+# zfs create -V 250m -o compression=on tank/fat32
+# zfs list tankNAME USED AVAIL REFER MOUNTPOINT
+tank 258M  670M   31K /tank
+# newfs_msdos -F32 /dev/zvol/tank/fat32
+# mount -t msdosfs /dev/zvol/tank/fat32 /mnt
+# df -h /mnt | grep fat32Filesystem           Size Used Avail Capacity Mounted on
+/dev/zvol/tank/fat32 249M  24k  249M     0%   /mnt
+# mount | grep fat32/dev/zvol/tank/fat32 on /mnt (msdosfs, local)
+----
+
+
+Destroying a volume is much the same as destroying a regular file system dataset.
+The operation is nearly instantaneous, but it may take several minutes for the free space to be reclaimed in the background.
+
+[[_zfs_zfs_rename]]
+=== Renaming a Dataset
+
+
+The name of a dataset can be changed with [command]``zfs rename``.
+The parent of a dataset can also be changed with this command.
+Renaming a dataset to be under a different parent dataset will change the value of those properties that are inherited from the parent dataset.
+When a dataset is renamed, it is unmounted and then remounted in the new location (which is inherited from the new parent dataset).  This behavior can be prevented with [option]``-u``.
+
+Rename a dataset and move it to be under a different parent dataset:
+
+----
+# zfs listNAME                   USED  AVAIL  REFER  MOUNTPOINT
+mypool                 780M  93.2G   144K  none
+mypool/ROOT            777M  93.2G   144K  none
+mypool/ROOT/default    777M  93.2G   777M  /
+mypool/tmp             176K  93.2G   176K  /tmp
+mypool/usr             704K  93.2G   144K  /usr
+mypool/usr/home        184K  93.2G   184K  /usr/home
+mypool/usr/mydataset  87.5K  93.2G  87.5K  /usr/mydataset
+mypool/usr/ports       144K  93.2G   144K  /usr/ports
+mypool/usr/src         144K  93.2G   144K  /usr/src
+mypool/var            1.21M  93.2G   614K  /var
+mypool/var/crash       148K  93.2G   148K  /var/crash
+mypool/var/log         178K  93.2G   178K  /var/log
+mypool/var/mail        144K  93.2G   144K  /var/mail
+mypool/var/tmp         152K  93.2G   152K  /var/tmp
+# zfs rename mypool/usr/mydataset mypool/var/newname
+# zfs listNAME                  USED  AVAIL  REFER  MOUNTPOINT
+mypool                780M  93.2G   144K  none
+mypool/ROOT           777M  93.2G   144K  none
+mypool/ROOT/default   777M  93.2G   777M  /
+mypool/tmp            176K  93.2G   176K  /tmp
+mypool/usr            616K  93.2G   144K  /usr
+mypool/usr/home       184K  93.2G   184K  /usr/home
+mypool/usr/ports      144K  93.2G   144K  /usr/ports
+mypool/usr/src        144K  93.2G   144K  /usr/src
+mypool/var           1.29M  93.2G   614K  /var
+mypool/var/crash      148K  93.2G   148K  /var/crash
+mypool/var/log        178K  93.2G   178K  /var/log
+mypool/var/mail       144K  93.2G   144K  /var/mail
+mypool/var/newname   87.5K  93.2G  87.5K  /var/newname
+mypool/var/tmp        152K  93.2G   152K  /var/tmp
+----
+
+
+Snapshots can also be renamed like this.
+Due to the nature of snapshots, they cannot be renamed into a different parent dataset.
+To rename a recursive snapshot, specify [option]``-r``, and all snapshots with the same name in child datasets with also be renamed.
+
+----
+# zfs list -t snapshotNAME                                USED  AVAIL  REFER  MOUNTPOINT
+mypool/var/newname@first_snapshot      0      -  87.5K  -
+# zfs rename mypool/var/newname@first_snapshot new_snapshot_name
+# zfs list -t snapshotNAME                                   USED  AVAIL  REFER  MOUNTPOINT
+mypool/var/newname@new_snapshot_name      0      -  87.5K  -
+----
+
+[[_zfs_zfs_set]]
+=== Setting Dataset Properties
+
+
+Each [acronym]``ZFS`` dataset has a number of properties that control its behavior.
+Most properties are automatically inherited from the parent dataset, but can be overridden locally.
+Set a property on a dataset with [command]``zfs set
+	  [replaceable]``property``=[replaceable]``value``[replaceable]``dataset````.
+Most properties have a limited set of valid values, [command]``zfs get`` will display each possible property and valid values.
+Most properties can be reverted to their inherited values using [command]``zfs inherit``.
+
+User-defined properties can also be set.
+They become part of the dataset configuration and can be used to provide additional information about the dataset or its contents.
+To distinguish these custom properties from the ones supplied as part of [acronym]``ZFS``, a colon (``:``) is used to create a custom namespace for the property.
+
+----
+# zfs set custom:costcenter=1234 tank
+# zfs get custom:costcenter tankNAME PROPERTY           VALUE SOURCE
+tank custom:costcenter  1234  local
+----
+
+
+To remove a custom property, use [command]``zfs inherit`` with [option]``-r``.
+If the custom property is not defined in any of the parent datasets, it will be removed completely (although the changes are still recorded in the pool's history).
+
+----
+# zfs inherit -r custom:costcenter tank
+# zfs get custom:costcenter tankNAME    PROPERTY           VALUE              SOURCE
+tank    custom:costcenter  -                  -
+# zfs get all tank | grep custom:costcenter
+# 
+----
+
+[[_zfs_zfs_set_share]]
+==== Getting and Setting Share Properties
+
+
+Two commonly used and useful dataset properties are the [acronym]``NFS`` and [acronym]``SMB`` share options.
+Setting these define if and how [acronym]``ZFS`` datasets may be shared on the network.
+At present, only setting sharing via [acronym]``NFS`` is supported on FreeBSD.
+To get the current status of a share, enter:
+
+----
+# zfs get sharenfs mypool/usr/homeNAME             PROPERTY  VALUE    SOURCE
+mypool/usr/home  sharenfs  on       local
+# zfs get sharesmb mypool/usr/homeNAME             PROPERTY  VALUE    SOURCE
+mypool/usr/home  sharesmb  off      local
+----
+
+
+To enable sharing of a dataset, enter:
+
+----
+# zfs set sharenfs=on mypool/usr/home
+----
+
+
+It is also possible to set additional options for sharing datasets through [acronym]``NFS``, such as [option]``-alldirs``, [option]``-maproot`` and [option]``-network``.
+To set additional options to a dataset shared through NFS, enter:
+
+----
+# zfs set sharenfs="-alldirs,-maproot=root,-network=192.168.1.0/24" mypool/usr/home
+----
+
+[[_zfs_zfs_snapshot]]
+=== Managing Snapshots
+
+<<_zfs_term_snapshot,
+Snapshots>> are one of the most powerful features of [acronym]``ZFS``.
+A snapshot provides a read-only, point-in-time copy of the dataset.
+With Copy-On-Write ([acronym]``COW``), snapshots can be created quickly by preserving the older version of the data on disk.
+If no snapshots exist, space is reclaimed for future use when data is rewritten or deleted.
+Snapshots preserve disk space by recording only the differences between the current dataset and a previous version.
+Snapshots are allowed only on whole datasets, not on individual files or directories.
+When a snapshot is created from a dataset, everything contained in it is duplicated.
+This includes the file system properties, files, directories, permissions, and so on.
+Snapshots use no additional space when they are first created, only consuming space as the blocks they reference are changed.
+Recursive snapshots taken with [option]``-r`` create a snapshot with the same name on the dataset and all of its children, providing a consistent moment-in-time snapshot of all of the file systems.
+This can be important when an application has files on multiple datasets that are related or dependent upon each other.
+Without snapshots, a backup would have copies of the files from different points in time.
+
+Snapshots in [acronym]``ZFS`` provide a variety of features that even other file systems with snapshot functionality lack.
+A typical example of snapshot use is to have a quick way of backing up the current state of the file system when a risky action like a software installation or a system upgrade is performed.
+If the action fails, the snapshot can be rolled back and the system has the same state as when the snapshot was created.
+If the upgrade was successful, the snapshot can be deleted to free up space.
+Without snapshots, a failed upgrade often requires a restore from backup, which is tedious, time consuming, and may require downtime during which the system cannot be used.
+Snapshots can be rolled back quickly, even while the system is running in normal operation, with little or no downtime.
+The time savings are enormous with multi-terabyte storage systems and the time required to copy the data from backup.
+Snapshots are not a replacement for a complete backup of a pool, but can be used as a quick and easy way to store a copy of the dataset at a specific point in time.
+
+[[_zfs_zfs_snapshot_creation]]
+==== Creating Snapshots
+
+
+Snapshots are created  with [command]``zfs snapshot
+	    [replaceable]``dataset``@[replaceable]``snapshotname````.
+Adding [option]``-r`` creates a snapshot recursively, with the same name on all child datasets.
+
+Create a recursive snapshot of the entire pool:
+
+----
+# zfs list -t allNAME                                   USED  AVAIL  REFER  MOUNTPOINT
+mypool                                 780M  93.2G   144K  none
+mypool/ROOT                            777M  93.2G   144K  none
+mypool/ROOT/default                    777M  93.2G   777M  /
+mypool/tmp                             176K  93.2G   176K  /tmp
+mypool/usr                             616K  93.2G   144K  /usr
+mypool/usr/home                        184K  93.2G   184K  /usr/home
+mypool/usr/ports                       144K  93.2G   144K  /usr/ports
+mypool/usr/src                         144K  93.2G   144K  /usr/src
+mypool/var                            1.29M  93.2G   616K  /var
+mypool/var/crash                       148K  93.2G   148K  /var/crash
+mypool/var/log                         178K  93.2G   178K  /var/log
+mypool/var/mail                        144K  93.2G   144K  /var/mail
+mypool/var/newname                    87.5K  93.2G  87.5K  /var/newname
+mypool/var/newname@new_snapshot_name      0      -  87.5K  -
+mypool/var/tmp                         152K  93.2G   152K  /var/tmp
+# zfs snapshot -r mypool@my_recursive_snapshot
+# zfs list -t snapshotNAME                                        USED  AVAIL  REFER  MOUNTPOINT
+mypool@my_recursive_snapshot                   0      -   144K  -
+mypool/ROOT@my_recursive_snapshot              0      -   144K  -
+mypool/ROOT/default@my_recursive_snapshot      0      -   777M  -
+mypool/tmp@my_recursive_snapshot               0      -   176K  -
+mypool/usr@my_recursive_snapshot               0      -   144K  -
+mypool/usr/home@my_recursive_snapshot          0      -   184K  -
+mypool/usr/ports@my_recursive_snapshot         0      -   144K  -
+mypool/usr/src@my_recursive_snapshot           0      -   144K  -
+mypool/var@my_recursive_snapshot               0      -   616K  -
+mypool/var/crash@my_recursive_snapshot         0      -   148K  -
+mypool/var/log@my_recursive_snapshot           0      -   178K  -
+mypool/var/mail@my_recursive_snapshot          0      -   144K  -
+mypool/var/newname@new_snapshot_name           0      -  87.5K  -
+mypool/var/newname@my_recursive_snapshot       0      -  87.5K  -
+mypool/var/tmp@my_recursive_snapshot           0      -   152K  -
+----
+
+
+Snapshots are not shown by a normal [command]``zfs list`` operation.
+To list snapshots, [option]``-t snapshot`` is appended to [command]``zfs list``.
+ [option]``-t all``	  displays both file systems and snapshots.
+
+Snapshots are not mounted directly, so path is shown in the `MOUNTPOINT` column.
+There is no mention of available disk space in the `AVAIL` column, as snapshots cannot be written to after they are created.
+Compare the snapshot to the original dataset from which it was created:
+
+----
+# zfs list -rt all mypool/usr/homeNAME                                    USED  AVAIL  REFER  MOUNTPOINT
+mypool/usr/home                         184K  93.2G   184K  /usr/home
+mypool/usr/home@my_recursive_snapshot      0      -   184K  -
+----
+
+
+Displaying both the dataset and the snapshot together reveals how snapshots work in <<_zfs_term_cow,COW>> fashion.
+They save only the changes (__delta__) that were made and not the complete file system contents all over again.
+This means that snapshots take little space when few changes are made.
+Space usage can be made even more apparent by copying a file to the dataset, then making a second snapshot:
+
+----
+# cp /etc/passwd /var/tmp
+# zfs snapshot mypool/var/tmp@after_cp
+# zfs list -rt all mypool/var/tmpNAME                                   USED  AVAIL  REFER  MOUNTPOINT
+mypool/var/tmp                         206K  93.2G   118K  /var/tmp
+mypool/var/tmp@my_recursive_snapshot    88K      -   152K  -
+mypool/var/tmp@after_cp                   0      -   118K  -
+----
+
+
+The second snapshot contains only the changes to the dataset after the copy operation.
+This yields enormous space savings.
+Notice that the size of the snapshot [replaceable]``mypool/var/tmp@my_recursive_snapshot``	  also changed in the `USED`	  column to indicate the changes between itself and the snapshot taken afterwards.
+
+[[_zfs_zfs_snapshot_diff]]
+==== Comparing Snapshots
+
+
+ZFS provides a built-in command to compare the differences in content between two snapshots.
+This is helpful when many snapshots were taken over time and the user wants to see how the file system has changed over time.
+For example, [command]``zfs diff`` lets a user find the latest snapshot that still contains a file that was accidentally deleted.
+Doing this for the two snapshots that were created in the previous section yields this output:
+
+----
+# zfs list -rt all mypool/var/tmpNAME                                   USED  AVAIL  REFER  MOUNTPOINT
+mypool/var/tmp                         206K  93.2G   118K  /var/tmp
+mypool/var/tmp@my_recursive_snapshot    88K      -   152K  -
+mypool/var/tmp@after_cp                   0      -   118K  -
+# zfs diff mypool/var/tmp@my_recursive_snapshotM       /var/tmp/
++       /var/tmp/passwd
+----
+
+
+The command lists the changes between the specified snapshot (in this case ``[replaceable]``mypool/var/tmp@my_recursive_snapshot````) and the live file system.
+The first column shows the type of change:
+
+[cols="1,1"]
+|===
+
+|+
+|The path or file was added.
+
+|-
+|The path or file was deleted.
+
+|M
+|The path or file was modified.
+
+|R
+|The path or file was renamed.
+|===
+
+
+Comparing the output with the table, it becomes clear that [path]``passwd``
+	  was added after the snapshot `[replaceable]``mypool/var/tmp@my_recursive_snapshot```	  was created.
+This also resulted in a modification to the parent directory mounted at ``[replaceable]``/var/tmp````.
+
+Comparing two snapshots is helpful when using the [acronym]``ZFS`` replication feature to transfer a dataset to a different host for backup purposes.
+
+Compare two snapshots by providing the full dataset name and snapshot name of both datasets:
+
+----
+# cp /var/tmp/passwd /var/tmp/passwd.copy
+# zfs snapshot mypool/var/tmp@diff_snapshot
+# zfs diff mypool/var/tmp@my_recursive_snapshot mypool/var/tmp@diff_snapshotM       /var/tmp/
++       /var/tmp/passwd
++       /var/tmp/passwd.copy
+# zfs diff mypool/var/tmp@my_recursive_snapshot mypool/var/tmp@after_cpM       /var/tmp/
++       /var/tmp/passwd
+----
+
+
+A backup administrator can compare two snapshots received from the sending host and determine the actual changes in the dataset.
+See the <<_zfs_zfs_send,Replication>> section for more information.
+
+[[_zfs_zfs_snapshot_rollback]]
+==== Snapshot Rollback
+
+
+When at least one snapshot is available, it can be rolled back to at any time.
+Most of the time this is the case when the current state of the dataset is no longer required and an older version is preferred.
+Scenarios such as local development tests have gone wrong, botched system updates hampering the system's overall functionality, or the requirement to restore accidentally deleted files or directories are all too common occurrences.
+Luckily, rolling back a snapshot is just as easy as typing [command]``zfs rollback
+	    [replaceable]``snapshotname````.
+Depending on how many changes are involved, the operation will finish in a certain amount of time.
+During that time, the dataset always remains in a consistent state, much like a database that conforms to ACID principles is performing a rollback.
+This is happening while the dataset is live and accessible without requiring a downtime.
+Once the snapshot has been rolled back, the dataset has the same state as it had when the snapshot was originally taken.
+All other data in that dataset that was not part of the snapshot is discarded.
+Taking a snapshot of the current state of the dataset before rolling back to a previous one is a good idea when some data is required later.
+This way, the user can roll back and forth between snapshots without losing data that is still valuable.
+
+In the first example, a snapshot is rolled back because of a careless [command]``rm`` operation that removes too much data than was intended.
+
+----
+# zfs list -rt all mypool/var/tmpNAME                                   USED  AVAIL  REFER  MOUNTPOINT
+mypool/var/tmp                         262K  93.2G   120K  /var/tmp
+mypool/var/tmp@my_recursive_snapshot    88K      -   152K  -
+mypool/var/tmp@after_cp               53.5K      -   118K  -
+mypool/var/tmp@diff_snapshot              0      -   120K  -
+# ls /var/tmppasswd          passwd.copy     vi.recover
+# rm /var/tmp/passwd*
+# ls /var/tmpvi.recover
+----
+
+
+At this point, the user realized that too many files were deleted and wants them back. [acronym]``ZFS``	  provides an easy way to get them back using rollbacks, but only when snapshots of important data are performed on a regular basis.
+To get the files back and start over from the last snapshot, issue the command:
+
+----
+# zfs rollback mypool/var/tmp@diff_snapshot
+# ls /var/tmppasswd          passwd.copy     vi.recover
+----
+
+
+The rollback operation restored the dataset to the state of the last snapshot.
+It is also possible to roll back to a snapshot that was taken much earlier and has other snapshots that were created after it.
+When trying to do this, [acronym]``ZFS`` will issue this warning:
+
+----
+# zfs list -rt snapshot mypool/var/tmpAME                                   USED  AVAIL  REFER  MOUNTPOINT
+mypool/var/tmp@my_recursive_snapshot    88K      -   152K  -
+mypool/var/tmp@after_cp               53.5K      -   118K  -
+mypool/var/tmp@diff_snapshot              0      -   120K  -
+# zfs rollback mypool/var/tmp@my_recursive_snapshotcannot rollback to 'mypool/var/tmp@my_recursive_snapshot': more recent snapshots exist
+use '-r' to force deletion of the following snapshots:
+mypool/var/tmp@after_cp
+mypool/var/tmp@diff_snapshot
+----
+
+
+This warning means that snapshots exist between the current state of the dataset and the snapshot to which the user wants to roll back.
+To complete the rollback, these snapshots must be deleted. [acronym]``ZFS`` cannot track all the changes between different states of the dataset, because snapshots are read-only. [acronym]``ZFS`` will not delete the affected snapshots unless the user specifies [option]``-r`` to indicate that this is the desired action.
+If that is the intention, and the consequences of losing all intermediate snapshots is understood, the command can be issued:
+
+----
+# zfs rollback -r mypool/var/tmp@my_recursive_snapshot
+# zfs list -rt snapshot mypool/var/tmpNAME                                   USED  AVAIL  REFER  MOUNTPOINT
+mypool/var/tmp@my_recursive_snapshot     8K      -   152K  -
+# ls /var/tmpvi.recover
+----
+
+
+The output from [command]``zfs list -t snapshot``	  confirms that the intermediate snapshots were removed as a result of [command]``zfs rollback -r``.
+
+[[_zfs_zfs_snapshot_snapdir]]
+==== Restoring Individual Files from Snapshots
+
+
+Snapshots are mounted in a hidden directory under the parent dataset: [path]``.zfs/snapshots/snapshotname``
+.
+By default, these directories will not be displayed even when a standard [command]``ls -a`` is issued.
+Although the directory is not displayed, it is there nevertheless and can be accessed like any normal directory.
+The property named `snapdir` controls whether these hidden directories show up in a directory listing.
+Setting the property to `visible`	  allows them to appear in the output of [command]``ls``	  and other commands that deal with directory contents.
+
+----
+# zfs get snapdir mypool/var/tmpNAME            PROPERTY  VALUE    SOURCE
+mypool/var/tmp  snapdir   hidden   default
+# ls -a /var/tmp.               ..              passwd          vi.recover
+# zfs set snapdir=visible mypool/var/tmp
+# ls -a /var/tmp.               ..              .zfs            passwd          vi.recover
+----
+
+
+Individual files can easily be restored to a previous state by copying them from the snapshot back to the parent dataset.
+The directory structure below [path]``.zfs/snapshot``
+ has a directory named exactly like the snapshots taken earlier to make it easier to identify them.
+In the next example, it is assumed that a file is to be restored from the hidden [path]``.zfs``
+ directory by copying it from the snapshot that contained the latest version of the file:
+
+----
+# rm /var/tmp/passwd
+# ls -a /var/tmp.               ..              .zfs            vi.recover
+# ls /var/tmp/.zfs/snapshotafter_cp                my_recursive_snapshot
+# ls /var/tmp/.zfs/snapshot/after_cppasswd          vi.recover
+# cp /var/tmp/.zfs/snapshot/after_cp/passwd /var/tmp
+----
+
+
+When [command]``ls .zfs/snapshot`` was issued, the `snapdir` property might have been set to hidden, but it would still be possible to list the contents of that directory.
+It is up to the administrator to decide whether these directories will be displayed.
+It is possible to display these for certain datasets and prevent it for others.
+Copying files or directories from this hidden [path]``.zfs/snapshot``
+ is simple enough.
+Trying it the other way around results in this error:
+
+----
+# cp /etc/rc.conf /var/tmp/.zfs/snapshot/after_cp/cp: /var/tmp/.zfs/snapshot/after_cp/rc.conf: Read-only file system
+----
+
+
+The error reminds the user that snapshots are read-only and cannot be changed after creation.
+Files cannot be copied into or removed from snapshot directories because that would change the state of the dataset they represent.
+
+Snapshots consume space based on how much the parent file system has changed since the time of the snapshot.
+The `written` property of a snapshot tracks how much space is being used by the snapshot.
+
+Snapshots are destroyed and the space reclaimed with [command]``zfs destroy
+	    [replaceable]``dataset``@[replaceable]``snapshot````.
+Adding [option]``-r`` recursively removes all snapshots with the same name under the parent dataset.
+Adding [option]``-n -v`` to the command displays a list of the snapshots that would be deleted and an estimate of how much space would be reclaimed without performing the actual destroy operation.
+
+[[_zfs_zfs_clones]]
+=== Managing Clones
+
+
+A clone is a copy of a snapshot that is treated more like a regular dataset.
+Unlike a snapshot, a clone is not read only, is mounted, and can have its own properties.
+Once a clone has been created using [command]``zfs clone``, the snapshot it was created from cannot be destroyed.
+The child/parent relationship between the clone and the snapshot can be reversed using [command]``zfs promote``.
+After a clone has been promoted, the snapshot becomes a child of the clone, rather than of the original parent dataset.
+This will change how the space is accounted, but not actually change the amount of space consumed.
+The clone can be mounted at any point within the [acronym]``ZFS`` file system hierarchy, not just below the original location of the snapshot.
+
+To demonstrate the clone feature, this example dataset is used:
+
+----
+# zfs list -rt all camino/home/joeNAME                    USED  AVAIL  REFER  MOUNTPOINT
+camino/home/joe         108K   1.3G    87K  /usr/home/joe
+camino/home/joe@plans    21K      -  85.5K  -
+camino/home/joe@backup    0K      -    87K  -
+----
+
+
+A typical use for clones is to experiment with a specific dataset while keeping the snapshot around to fall back to in case something goes wrong.
+Since snapshots cannot be changed, a read/write clone of a snapshot is created.
+After the desired result is achieved in the clone, the clone can be promoted to a dataset and the old file system removed.
+This is not strictly necessary, as the clone and dataset can coexist without problems.
+
+----
+# zfs clone camino/home/joe@backup camino/home/joenew
+# ls /usr/home/joe*/usr/home/joe:
+backup.txz     plans.txt
+
+/usr/home/joenew:
+backup.txz     plans.txt
+# df -h /usr/homeFilesystem          Size    Used   Avail Capacity  Mounted on
+usr/home/joe        1.3G     31k    1.3G     0%    /usr/home/joe
+usr/home/joenew     1.3G     31k    1.3G     0%    /usr/home/joenew
+----
+
+
+After a clone is created it is an exact copy of the state the dataset was in when the snapshot was taken.
+The clone can now be changed independently from its originating dataset.
+The only connection between the two is the snapshot. [acronym]``ZFS`` records this connection in the property ``origin``.
+Once the dependency between the snapshot and the clone has been removed by promoting the clone using [command]``zfs promote``, the `origin` of the clone is removed as it is now an independent dataset.
+This example demonstrates it:
+
+----
+# zfs get origin camino/home/joenewNAME                  PROPERTY  VALUE                     SOURCE
+camino/home/joenew    origin    camino/home/joe@backup    -
+# zfs promote camino/home/joenew
+# zfs get origin camino/home/joenewNAME                  PROPERTY  VALUE   SOURCE
+camino/home/joenew    origin    -       -
+----
+
+
+After making some changes like copying [path]``loader.conf``
+ to the promoted clone, for example, the old directory becomes obsolete in this case.
+Instead, the promoted clone can replace it.
+This can be achieved by two consecutive commands: [command]``zfs
+	  destroy`` on the old dataset and [command]``zfs
+	  rename`` on the clone to name it like the old dataset (it could also get an entirely different name).
+
+----
+# cp /boot/defaults/loader.conf /usr/home/joenew
+# zfs destroy -f camino/home/joe
+# zfs rename camino/home/joenew camino/home/joe
+# ls /usr/home/joebackup.txz     loader.conf     plans.txt
+# df -h /usr/homeFilesystem          Size    Used   Avail Capacity  Mounted on
+usr/home/joe        1.3G    128k    1.3G     0%    /usr/home/joe
+----
+
+
+The cloned snapshot is now handled like an ordinary dataset.
+It contains all the data from the original snapshot plus the files that were added to it like [path]``loader.conf``
+.
+Clones can be used in different scenarios to provide useful features to ZFS users.
+For example, jails could be provided as snapshots containing different sets of installed applications.
+Users can clone these snapshots and add their own applications as they see fit.
+Once they are satisfied with the changes, the clones can be promoted to full datasets and provided to end users to work with like they would with a real dataset.
+This saves time and administrative overhead when providing these jails.
+
+[[_zfs_zfs_send]]
+=== Replication
+
+
+Keeping data on a single pool in one location exposes it to risks like theft and natural or human disasters.
+Making regular backups of the entire pool is vital. [acronym]``ZFS`` provides a built-in serialization feature that can send a stream representation of the data to standard output.
+Using this technique, it is possible to not only store the data on another pool connected to the local system, but also to send it over a network to another system.
+Snapshots are the basis for this replication (see the section on <<_zfs_zfs_snapshot,[acronym]``ZFS``
+	  snapshots>>).  The commands used for replicating data are [command]``zfs send`` and [command]``zfs receive``.
+
+These examples demonstrate [acronym]``ZFS``	replication with these two pools:
+
+----
+# zpool listNAME    SIZE  ALLOC   FREE   CKPOINT  EXPANDSZ   FRAG   CAP  DEDUP  HEALTH  ALTROOT
+backup  960M    77K   896M         -         -     0%    0%  1.00x  ONLINE  -
+mypool  984M  43.7M   940M         -         -     0%    4%  1.00x  ONLINE  -
+----
+
+
+The pool named [replaceable]``mypool`` is the primary pool where data is written to and read from on a regular basis.
+A second pool, [replaceable]``backup`` is used as a standby in case the primary pool becomes unavailable.
+Note that this fail-over is not done automatically by [acronym]``ZFS``, but must be manually done by a system administrator when needed.
+A snapshot is used to provide a consistent version of the file system to be replicated.
+Once a snapshot of [replaceable]``mypool`` has been created, it can be copied to the [replaceable]``backup`` pool.
+Only snapshots can be replicated.
+Changes made since the most recent snapshot will not be included.
+
+----
+# zfs snapshot mypool@backup1
+# zfs list -t snapshotNAME                    USED  AVAIL  REFER  MOUNTPOINT
+mypool@backup1             0      -  43.6M  -
+----
+
+
+Now that a snapshot exists, [command]``zfs send``	can be used to create a stream representing the contents of the snapshot.
+This stream can be stored as a file or received by another pool.
+The stream is written to standard output, but must be redirected to a file or pipe or an error is produced:
+
+----
+# zfs send mypool@backup1Error: Stream can not be written to a terminal.
+You must redirect standard output.
+----
+
+
+To back up a dataset with [command]``zfs send``, redirect to a file located on the mounted backup pool.
+Ensure that the pool has enough free space to accommodate the size of the snapshot being sent, which means all of the data contained in the snapshot, not just the changes from the previous snapshot.
+
+----
+# zfs send mypool@backup1 > /backup/backup1
+# zpool listNAME    SIZE  ALLOC   FREE   CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP  HEALTH  ALTROOT
+backup  960M  63.7M   896M         -         -     0%     6%  1.00x  ONLINE  -
+mypool  984M  43.7M   940M         -         -     0%     4%  1.00x  ONLINE  -
+----
+
+
+The [command]``zfs send`` transferred all the data in the snapshot called [replaceable]``backup1`` to the pool named [replaceable]``backup``.
+Creating and sending these snapshots can be done automatically with a  {{< manpage "cron" "8" >}}
+ job.
+
+Instead of storing the backups as archive files, [acronym]``ZFS`` can receive them as a live file system, allowing the backed up data to be accessed directly.
+To get to the actual data contained in those streams, [command]``zfs receive`` is used to transform the streams back into files and directories.
+The example below combines [command]``zfs send`` and [command]``zfs receive`` using a pipe to copy the data from one pool to another.
+The data can be used directly on the receiving pool after the transfer is complete.
+A dataset can only be replicated to an empty dataset.
+
+----
+# zfs snapshot mypool@replica1
+# zfs send -v mypool@replica1 | zfs receive backup/mypoolsend from @ to mypool@replica1 estimated size is 50.1M
+total estimated size is 50.1M
+TIME        SENT   SNAPSHOT
+# zpool listNAME    SIZE  ALLOC   FREE   CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP  HEALTH  ALTROOT
+backup  960M  63.7M   896M         -         -     0%     6%  1.00x  ONLINE  -
+mypool  984M  43.7M   940M         -         -     0%     4%  1.00x  ONLINE  -
+----
+
+[[_zfs_send_incremental]]
+==== Incremental Backups
+
+[command]``
+zfs send`` can also determine the difference between two snapshots and send only the differences between the two.
+This saves disk space and transfer time.
+For example:
+
+----
+# zfs snapshot mypool@replica2
+# zfs list -t snapshotNAME                    USED  AVAIL  REFER  MOUNTPOINT
+mypool@replica1         5.72M      -  43.6M  -
+mypool@replica2             0      -  44.1M  -
+# zpool listNAME    SIZE  ALLOC   FREE   CKPOINT  EXPANDSZ   FRAG   CAP  DEDUP  HEALTH  ALTROOT
+backup  960M  61.7M   898M         -         -     0%    6%  1.00x  ONLINE  -
+mypool  960M  50.2M   910M         -         -     0%    5%  1.00x  ONLINE  -
+----
+
+
+A second snapshot called [replaceable]``replica2`` was created.
+This second snapshot contains only the changes that were made to the file system between now and the previous snapshot, [replaceable]``replica1``.
+Using [command]``zfs send -i`` and indicating the pair of snapshots generates an incremental replica stream containing only the data that has changed.
+This can only succeed if the initial snapshot already exists on the receiving side.
+
+----
+# zfs send -v -i mypool@replica1 mypool@replica2 | zfs receive /backup/mypoolsend from @replica1 to mypool@replica2 estimated size is 5.02M
+total estimated size is 5.02M
+TIME        SENT   SNAPSHOT
+# zpool listNAME    SIZE  ALLOC   FREE   CKPOINT  EXPANDSZ   FRAG  CAP  DEDUP  HEALTH  ALTROOT
+backup  960M  80.8M   879M         -         -     0%   8%  1.00x  ONLINE  -
+mypool  960M  50.2M   910M         -         -     0%   5%  1.00x  ONLINE  -
+# zfs listNAME                         USED  AVAIL  REFER  MOUNTPOINT
+backup                      55.4M   240G   152K  /backup
+backup/mypool               55.3M   240G  55.2M  /backup/mypool
+mypool                      55.6M  11.6G  55.0M  /mypool
+# zfs list -t snapshotNAME                                         USED  AVAIL  REFER  MOUNTPOINT
+backup/mypool@replica1                       104K      -  50.2M  -
+backup/mypool@replica2                          0      -  55.2M  -
+mypool@replica1                             29.9K      -  50.0M  -
+mypool@replica2                                 0      -  55.0M  -
+----
+
+
+The incremental stream was successfully transferred.
+Only the data that had changed was replicated, rather than the entirety of [replaceable]``replica1``.
+Only the differences were sent, which took much less time to transfer and saved disk space by not copying the complete pool each time.
+This is useful when having to rely on slow networks or when costs per transferred byte must be considered.
+
+A new file system, [replaceable]``backup/mypool``, is available with all of the files and data from the pool [replaceable]``mypool``.
+If [option]``-P``	  is specified, the properties of the dataset will be copied, including compression settings, quotas, and mount points.
+When [option]``-R`` is specified, all child datasets of the indicated dataset will be copied, along with all of their properties.
+Sending and receiving can be automated so that regular backups are created on the second pool.
+
+[[_zfs_send_ssh]]
+==== Sending Encrypted Backups over SSH
+
+
+Sending streams over the network is a good way to keep a remote backup, but it does come with a drawback.
+Data sent over the network link is not encrypted, allowing anyone to intercept and transform the streams back into data without the knowledge of the sending user.
+This is undesirable, especially when sending the streams over the internet to a remote host. [app]``SSH`` can be used to securely encrypt data send over a network connection.
+Since [acronym]``ZFS`` only requires the stream to be redirected from standard output, it is relatively easy to pipe it through [app]``SSH``.
+To keep the contents of the file system encrypted in transit and on the remote system, consider using https://wiki.freebsd.org/PEFS[PEFS].
+
+A few settings and security precautions must be completed first.
+Only the necessary steps required for the [command]``zfs send`` operation are shown here.
+For more information on [app]``SSH``, see <<_openssh>>.
+
+This configuration is required:
+
+* Passwordless [app]``SSH`` access between sending and receiving host using [app]``SSH`` keys
+* Normally, the privileges of the [username]``root`` user are needed to send and receive streams. This requires logging in to the receiving system as [username]``root`` . However, logging in as [username]``root`` is disabled by default for security reasons. The <<_zfs_zfs_allow,ZFS Delegation>>	      system can be used to allow a non-[username]``root`` user on each system to perform the respective send and receive operations.
+* On the sending system:
++
+
+----
+# zfs allow -u someuser send,snapshot mypool
+----
+* To mount the pool, the unprivileged user must own the directory, and regular users must be allowed to mount file systems. On the receiving system:
++
+
+----
+# sysctl vfs.usermount=1vfs.usermount: 0 -> 1
+# sysrc -f /etc/sysctl.conf vfs.usermount=1
+# zfs create recvpool/backup
+# zfs allow -u someuser create,mount,receive recvpool/backup
+# chown someuser /recvpool/backup
+----
+
+
+The unprivileged user now has the ability to receive and mount datasets, and the [replaceable]``home``	  dataset can be replicated to the remote system:
+
+----
+% zfs snapshot -r mypool/home@monday
+% zfs send -R mypool/home@monday | ssh someuser@backuphost zfs recv -dvu recvpool/backup
+----
+
+
+A recursive snapshot called [replaceable]``monday`` is made of the file system dataset [replaceable]``home`` that resides on the pool [replaceable]``mypool``.
+Then it is sent with [command]``zfs send -R`` to include the dataset, all child datasets, snapshots, clones, and settings in the stream.
+The output is piped to the waiting [command]``zfs receive`` on the remote host [replaceable]``backuphost`` through [app]``SSH``.
+Using a fully qualified domain name or IP address is recommended.
+The receiving machine writes the data to the [replaceable]``backup`` dataset on the [replaceable]``recvpool`` pool.
+Adding [option]``-d`` to [command]``zfs recv``	  overwrites the name of the pool on the receiving side with the name of the snapshot.
+ [option]``-u`` causes the file systems to not be mounted on the receiving side.
+When [option]``-v`` is included, more detail about the transfer is shown, including elapsed time and the amount of data transferred.
+
+[[_zfs_zfs_quota]]
+=== Dataset, User, and Group Quotas
+
+<<_zfs_term_quota,
+Dataset quotas>> are used to restrict the amount of space that can be consumed by a particular dataset. <<_zfs_term_refquota,Reference Quotas>> work in very much the same way, but only count the space used by the dataset itself, excluding snapshots and child datasets.
+Similarly, <<_zfs_term_userquota,user>> and <<_zfs_term_groupquota,group>> quotas can be used to prevent users or groups from using all of the space in the pool or dataset.
+
+To enforce a dataset quota of 10{nbsp}GB for [path]``storage/home/bob``
+:
+
+----
+# zfs set quota=10G storage/home/bob
+----
+
+
+To enforce a reference quota of 10{nbsp}GB for [path]``storage/home/bob``
+:
+
+----
+# zfs set refquota=10G storage/home/bob
+----
+
+
+To remove a quota of 10{nbsp}GB for [path]``storage/home/bob``
+:
+
+----
+# zfs set quota=none storage/home/bob
+----
+
+
+The general format is ``userquota@[replaceable]``user``=[replaceable]``size````, and the user's name must be in one of these formats:
+
+* [acronym]``POSIX`` compatible name such as [replaceable]``joe``.
+* [acronym]``POSIX`` numeric ID such as [replaceable]``789``.
+* [acronym]``SID`` name such as [replaceable]``joe.bloggs@example.com``.
+* [acronym]``SID``	    numeric ID such as [replaceable]``S-1-123-456-789``.
+
+
+For example, to enforce a user quota of 50{nbsp}GB for the user named [replaceable]``joe``:
+
+----
+# zfs set userquota@joe=50G
+----
+
+
+To remove any quota:
+
+----
+# zfs set userquota@joe=none
+----
+
+[NOTE]
+====
+User quota properties are not displayed by [command]``zfs get all``.
+Non-[username]``root``
+ users can only see their own quotas unless they have been granted the `userquota` privilege.
+Users with this privilege are able to view and set everyone's quota.
+====
+
+
+The general format for setting a group quota is: ``groupquota@[replaceable]``group``=[replaceable]``size````.
+
+To set the quota for the group [replaceable]``firstgroup`` to 50{nbsp}GB, use:
+
+----
+# zfs set groupquota@firstgroup=50G
+----
+
+
+To remove the quota for the group [replaceable]``firstgroup``, or to make sure that one is not set, instead use:
+
+----
+# zfs set groupquota@firstgroup=none
+----
+
+
+As with the user quota property, non-[username]``root``
+ users can only see the quotas associated with the groups to which they belong.
+However, [username]``root``
+ or a user with the `groupquota` privilege can view and set all quotas for all groups.
+
+To display the amount of space used by each user on a file system or snapshot along with any quotas, use [command]``zfs userspace``.
+For group information, use [command]``zfs groupspace``.
+For more information about supported options or how to display only specific options, refer to  {{< manpage "zfs" "1" >}}
+.
+
+Users with sufficient privileges, and [username]``root``
+, can list the quota for [path]``storage/home/bob``
+ using:
+
+----
+# zfs get quota storage/home/bob
+----
+
+[[_zfs_zfs_reservation]]
+=== Reservations
+
+<<_zfs_term_reservation,
+Reservations>>	guarantee a minimum amount of space will always be available on a dataset.
+The reserved space will not be available to any other dataset.
+This feature can be especially useful to ensure that free space is available for an important dataset or log files.
+
+The general format of the `reservation`	property is ``reservation=[replaceable]``size````, so to set a reservation of 10{nbsp}GB on [path]``storage/home/bob``
+, use:
+
+----
+# zfs set reservation=10G storage/home/bob
+----
+
+
+To clear any reservation:
+
+----
+# zfs set reservation=none storage/home/bob
+----
+
+
+The same principle can be applied to the `refreservation` property for setting a <<_zfs_term_refreservation,Reference
+	  Reservation>>, with the general format ``refreservation=[replaceable]``size````.
+
+This command shows any reservations or refreservations that exist on [path]``storage/home/bob``
+:
+
+----
+# zfs get reservation storage/home/bob
+# zfs get refreservation storage/home/bob
+----
+
+[[_zfs_zfs_compression]]
+=== Compression
+
+[acronym]``
+ZFS`` provides transparent compression.
+Compressing data at the block level as it is written not only saves space, but can also increase disk throughput.
+If data is compressed by 25%, but the compressed data is written to the disk at the same rate as the uncompressed version, resulting in an effective write speed of 125%.  Compression can also be a great alternative to <<_zfs_zfs_deduplication,Deduplication>>	because it does not require additional memory.
+
+[acronym]``ZFS`` offers several different compression algorithms, each with different trade-offs.
+With the introduction of [acronym]``LZ4`` compression in [acronym]``ZFS`` v5000, it is possible to enable compression for the entire pool without the large performance trade-off of other algorithms.
+The biggest advantage to [acronym]``LZ4`` is the _early abort_	feature.
+If [acronym]``LZ4`` does not achieve at least 12.5% compression in the first part of the data, the block is written uncompressed to avoid wasting CPU cycles trying to compress data that is either already compressed or uncompressible.
+For details about the different compression algorithms available in [acronym]``ZFS``, see the <<_zfs_term_compression,Compression>> entry in the terminology section.
+
+The administrator can monitor the effectiveness of compression using a number of dataset properties.
+
+----
+# zfs get used,compressratio,compression,logicalused mypool/compressed_datasetNAME        PROPERTY          VALUE     SOURCE
+mypool/compressed_dataset  used              449G      -
+mypool/compressed_dataset  compressratio     1.11x     -
+mypool/compressed_dataset  compression       lz4       local
+mypool/compressed_dataset  logicalused       496G      -
+----
+
+
+The dataset is currently using 449{nbsp}GB of space (the used property).  Without compression, it would have taken 496{nbsp}GB of space (the `logicalused`	property).  This results in the 1.11:1 compression ratio.
+
+Compression can have an unexpected side effect when combined with <<_zfs_term_userquota,User Quotas>>.
+User quotas restrict how much space a user can consume on a dataset, but the measurements are based on how much space is used __after compression__.
+So if a user has a quota of 10{nbsp}GB, and writes 10{nbsp}GB of compressible data, they will still be able to store additional data.
+If they later update a file, say a database, with more or less compressible data, the amount of space available to them will change.
+This can result in the odd situation where a user did not increase the actual amount of data (the `logicalused` property), but the change in compression caused them to reach their quota limit.
+
+Compression can have a similar unexpected interaction with backups.
+Quotas are often used to limit how much data can be stored to ensure there is sufficient backup space available.
+However since quotas do not consider compression, more data may be written than would fit with uncompressed backups.
+
+[[_zfs_zfs_deduplication]]
+=== Deduplication
+
+
+When enabled, <<_zfs_term_deduplication,deduplication>>	uses the checksum of each block to detect duplicate blocks.
+When a new block is a duplicate of an existing block, [acronym]``ZFS`` writes an additional reference to the existing data instead of the whole duplicate block.
+Tremendous space savings are possible if the data contains many duplicated files or repeated information.
+Be warned: deduplication requires an extremely large amount of memory, and most of the space savings can be had without the extra cost by enabling compression instead.
+
+To activate deduplication, set the `dedup` property on the target pool:
+
+----
+# zfs set dedup=on pool
+----
+
+
+Only new data being written to the pool will be deduplicated.
+Data that has already been written to the pool will not be deduplicated merely by activating this option.
+A pool with a freshly activated deduplication property will look like this example:
+
+----
+# zpool listNAME  SIZE ALLOC  FREE   CKPOINT  EXPANDSZ   FRAG   CAP   DEDUP   HEALTH   ALTROOT
+pool 2.84G 2.19M 2.83G         -         -     0%    0%   1.00x   ONLINE   -
+----
+
+
+The `DEDUP` column shows the actual rate of deduplication for the pool.
+A value of `1.00x` shows that data has not been deduplicated yet.
+In the next example, the ports tree is copied three times into different directories on the deduplicated pool created above.
+
+----
+# for d in dir1 dir2 dir3; do>mkdir $d && cp -R /usr/ports $d &>done
+----
+
+
+Redundant data is detected and deduplicated:
+
+----
+# zpool listNAME SIZE  ALLOC  FREE   CKPOINT  EXPANDSZ   FRAG  CAP   DEDUP   HEALTH   ALTROOT
+pool 2.84G 20.9M 2.82G         -         -     0%   0%   3.00x   ONLINE   -
+----
+
+
+The `DEDUP` column shows a factor of ``3.00x``.
+Multiple copies of the ports tree data was detected and deduplicated, using only a third of the space.
+The potential for space savings can be enormous, but comes at the cost of having enough memory to keep track of the deduplicated blocks.
+
+Deduplication is not always beneficial, especially when the data on a pool is not redundant. [acronym]``ZFS`` can show potential space savings by simulating deduplication on an existing pool:
+
+----
+# zdb -S poolSimulated DDT histogram:
+
+bucket              allocated                       referenced
+______   ______________________________   ______________________________
+refcnt   blocks   LSIZE   PSIZE   DSIZE   blocks   LSIZE   PSIZE   DSIZE
+------   ------   -----   -----   -----   ------   -----   -----   -----
+     1    2.58M    289G    264G    264G    2.58M    289G    264G    264G
+     2     206K   12.6G   10.4G   10.4G     430K   26.4G   21.6G   21.6G
+     4    37.6K    692M    276M    276M     170K   3.04G   1.26G   1.26G
+     8    2.18K   45.2M   19.4M   19.4M    20.0K    425M    176M    176M
+    16      174   2.83M   1.20M   1.20M    3.33K   48.4M   20.4M   20.4M
+    32       40   2.17M    222K    222K    1.70K   97.2M   9.91M   9.91M
+    64        9     56K   10.5K   10.5K      865   4.96M    948K    948K
+   128        2   9.50K      2K      2K      419   2.11M    438K    438K
+   256        5   61.5K     12K     12K    1.90K   23.0M   4.47M   4.47M
+    1K        2      1K      1K      1K    2.98K   1.49M   1.49M   1.49M
+ Total    2.82M    303G    275G    275G    3.20M    319G    287G    287G
+
+dedup = 1.05, compress = 1.11, copies = 1.00, dedup * compress / copies = 1.16
+----
+
+
+After [command]``zdb -S`` finishes analyzing the pool, it shows the space reduction ratio that would be achieved by activating deduplication.
+In this case, `1.16` is a very poor space saving ratio that is mostly provided by compression.
+Activating deduplication on this pool would not save any significant amount of space, and is not worth the amount of memory required to enable deduplication.
+Using the formula __ratio = dedup * compress / copies__, system administrators can plan the storage allocation, deciding whether the workload will contain enough duplicate blocks to justify the memory requirements.
+If the data is reasonably compressible, the space savings may be very good.
+Enabling compression first is recommended, and compression can also provide greatly increased performance.
+Only enable deduplication in cases where the additional savings will be considerable and there is sufficient memory for the <<_zfs_term_deduplication,[acronym]``DDT``>>.
+
+[[_zfs_zfs_jail]]
+=== ZFS and Jails
+
+[command]``
+zfs jail`` and the corresponding `jailed` property are used to delegate a [acronym]``ZFS`` dataset to a <<_jails,Jail>>. [command]``zfs jail [replaceable]``jailid````	attaches a dataset to the specified jail, and [command]``zfs unjail`` detaches it.
+For the dataset to be controlled from within a jail, the `jailed` property must be set.
+Once a dataset is jailed, it can no longer be mounted on the host because it may have mount points that would compromise the security of the host.
+
+[[_zfs_zfs_allow]]
+== Delegated Administration
+
+
+A comprehensive permission delegation system allows unprivileged users to perform [acronym]``ZFS`` administration functions.
+For example, if each user's home directory is a dataset, users can be given permission to create and destroy snapshots of their home directories.
+A backup user can be given permission to use replication features.
+A usage statistics script can be allowed to run with access only to the space utilization data for all users.
+It is even possible to delegate the ability to delegate permissions.
+Permission delegation is possible for each subcommand and most properties.
+
+[[_zfs_zfs_allow_create]]
+=== Delegating Dataset Creation
+
+[command]``
+zfs allow [replaceable]``someuser`` create
+	  [replaceable]``mydataset```` gives the specified user permission to create child datasets under the selected parent dataset.
+There is a caveat: creating a new dataset involves mounting it.
+That requires setting the FreeBSD `vfs.usermount` {{< manpage "sysctl" "8" >}}
+ to `1` to allow non-root users to mount a file system.
+There is another restriction aimed at preventing abuse: non-[username]``root``
+	users must own the mountpoint where the file system is to be mounted.
+
+[[_zfs_zfs_allow_allow]]
+=== Delegating Permission Delegation
+
+[command]``
+zfs allow [replaceable]``someuser`` allow
+	  [replaceable]``mydataset```` gives the specified user the ability to assign any permission they have on the target dataset, or its children, to other users.
+If a user has the `snapshot` permission and the `allow` permission, that user can then grant the `snapshot` permission to other users.
+
+[[_zfs_advanced]]
+== Advanced Topics
+
+[[_zfs_advanced_tuning]]
+=== Tuning
+
+
+There are a number of tunables that can be adjusted to make [acronym]``ZFS`` perform best for different workloads.
+
+* _[var]``__vfs.zfs.arc_max__``_	    - Maximum size of the <<_zfs_term_arc,[acronym]``ARC``>>. The default is all [acronym]``RAM`` but 1{nbsp}GB, or 5/8 of all [acronym]``RAM``, whichever is more. However, a lower value should be used if the system will be running any other daemons or processes that may require memory. This value can be adjusted at runtime with  {{< manpage "sysctl" "8" >}} and can be set in [path]``/boot/loader.conf`` or [path]``/etc/sysctl.conf`` .
+* _[var]``__vfs.zfs.arc_meta_limit__``_	    - Limit the portion of the <<_zfs_term_arc,[acronym]``ARC``>>	    that can be used to store metadata. The default is one fourth of [var]``vfs.zfs.arc_max``. Increasing this value will improve performance if the workload involves operations on a large number of files and directories, or frequent metadata operations, at the cost of less file data fitting in the <<_zfs_term_arc,[acronym]``ARC``>>. This value can be adjusted at runtime with  {{< manpage "sysctl" "8" >}} and can be set in [path]``/boot/loader.conf`` or [path]``/etc/sysctl.conf`` .
+* _[var]``__vfs.zfs.arc_min__``_	    - Minimum size of the <<_zfs_term_arc,[acronym]``ARC``>>. The default is one half of [var]``vfs.zfs.arc_meta_limit``. Adjust this value to prevent other applications from pressuring out the entire <<_zfs_term_arc,[acronym]``ARC``>>. This value can be adjusted at runtime with  {{< manpage "sysctl" "8" >}} and can be set in [path]``/boot/loader.conf`` or [path]``/etc/sysctl.conf`` .
+* _[var]``__vfs.zfs.vdev.cache.size__``_	    - A preallocated amount of memory reserved as a cache for each device in the pool. The total amount of memory used will be this value multiplied by the number of devices. This value can only be adjusted at boot time, and is set in [path]``/boot/loader.conf`` .
+* _[var]``__vfs.zfs.min_auto_ashift__``_	    - Minimum [var]``ashift`` (sector size) that will be used automatically at pool creation time. The value is a power of two. The default value of `9` represents ``2^9 = 512``, a sector size of 512 bytes. To avoid _write amplification_ and get the best performance, set this value to the largest sector size used by a device in the pool.
++ 
+Many drives have 4{nbsp}KB sectors.
+Using the default [var]``ashift`` of `9` with these drives results in write amplification on these devices.
+Data that could be contained in a single 4{nbsp}KB write must instead be written in eight 512-byte writes.
+[acronym]``ZFS`` tries to read the native sector size from all devices when creating a pool, but many drives with 4{nbsp}KB sectors report that their sectors are 512 bytes for compatibility.
+Setting [var]``vfs.zfs.min_auto_ashift`` to `12` (``2^12 = 4096``) before creating a pool forces [acronym]``ZFS`` to use 4{nbsp}KB blocks for best performance on these drives.
++ 
+Forcing 4{nbsp}KB blocks is also useful on pools where disk upgrades are planned.
+Future disks are likely to use 4{nbsp}KB sectors, and [var]``ashift`` values cannot be changed after a pool is created.
++ 
+In some specific cases, the smaller 512-byte block size might be preferable.
+When used with 512-byte disks for databases, or as storage for virtual machines, less data is transferred during small random reads.
+This can provide better performance, especially when using a smaller [acronym]``ZFS`` record size.
+* _[var]``__vfs.zfs.prefetch_disable__``_	    - Disable prefetch. A value of `0` is enabled and `1` is disabled. The default is ``0``, unless the system has less than 4{nbsp}GB of [acronym]``RAM``. Prefetch works by reading larger blocks than were requested into the <<_zfs_term_arc,[acronym]``ARC``>>	    in hopes that the data will be needed soon. If the workload has a large number of random reads, disabling prefetch may actually improve performance by reducing unnecessary reads. This value can be adjusted at any time with  {{< manpage "sysctl" "8" >}} .
+* _[var]``__vfs.zfs.vdev.trim_on_init__``_	    - Control whether new devices added to the pool have the `TRIM` command run on them. This ensures the best performance and longevity for [acronym]``SSD``s, but takes extra time. If the device has already been secure erased, disabling this setting will make the addition of the new device faster. This value can be adjusted at any time with  {{< manpage "sysctl" "8" >}} .
+* _[var]``__vfs.zfs.vdev.max_pending__``_	    - Limit the number of pending I/O requests per device. A higher value will keep the device command queue full and may give higher throughput. A lower value will reduce latency. This value can be adjusted at any time with  {{< manpage "sysctl" "8" >}} .
+* _[var]``__vfs.zfs.top_maxinflight__``_	    - Maxmimum number of outstanding I/Os per top-level <<_zfs_term_vdev,vdev>>. Limits the depth of the command queue to prevent high latency. The limit is per top-level vdev, meaning the limit applies to each <<_zfs_term_vdev_mirror,mirror>>, <<_zfs_term_vdev_raidz,RAID-Z>>, or other vdev independently. This value can be adjusted at any time with  {{< manpage "sysctl" "8" >}} .
+* _[var]``__vfs.zfs.l2arc_write_max__``_	    - Limit the amount of data written to the <<_zfs_term_l2arc,[acronym]``L2ARC``>>	    per second. This tunable is designed to extend the longevity of [acronym]``SSD``s by limiting the amount of data written to the device. This value can be adjusted at any time with  {{< manpage "sysctl" "8" >}} .
+* _[var]``__vfs.zfs.l2arc_write_boost__``_	    - The value of this tunable is added to <<_zfs_advanced_tuning_l2arc_write_max,[var]``vfs.zfs.l2arc_write_max``>>	    and increases the write speed to the [acronym]``SSD`` until the first block is evicted from the <<_zfs_term_l2arc,[acronym]``L2ARC``>>. This "`Turbo Warmup Phase`" is designed to reduce the performance loss from an empty <<_zfs_term_l2arc,[acronym]``L2ARC``>>	    after a reboot. This value can be adjusted at any time with  {{< manpage "sysctl" "8" >}} .
+* _[var]``__vfs.zfs.scrub_delay__``_	    - Number of ticks to delay between each I/O during a <<_zfs_term_scrub,[command]``scrub``>>. To ensure that a [command]``scrub`` does not interfere with the normal operation of the pool, if any other [acronym]``I/O`` is happening the [command]``scrub`` will delay between each command. This value controls the limit on the total [acronym]``IOPS`` (I/Os Per Second) generated by the [command]``scrub``. The granularity of the setting is determined by the value of [var]``kern.hz``	    which defaults to 1000 ticks per second. This setting may be changed, resulting in a different effective [acronym]``IOPS`` limit. The default value is ``4``, resulting in a limit of: 1000{nbsp}ticks/sec / 4 = 250{nbsp}[acronym]``IOPS``. Using a value of [replaceable]``20`` would give a limit of: 1000{nbsp}ticks/sec / 20 = 50{nbsp}[acronym]``IOPS``. The speed of [command]``scrub`` is only limited when there has been recent activity on the pool, as determined by <<_zfs_advanced_tuning_scan_idle,[var]``vfs.zfs.scan_idle``>>. This value can be adjusted at any time with  {{< manpage "sysctl" "8" >}} .
+* _[var]``__vfs.zfs.resilver_delay__``_	    - Number of milliseconds of delay inserted between each I/O during a <<_zfs_term_resilver,resilver>>. To ensure that a resilver does not interfere with the normal operation of the pool, if any other I/O is happening the resilver will delay between each command. This value controls the limit of total [acronym]``IOPS`` (I/Os Per Second) generated by the resilver. The granularity of the setting is determined by the value of [var]``kern.hz`` which defaults to 1000 ticks per second. This setting may be changed, resulting in a different effective [acronym]``IOPS`` limit. The default value is 2, resulting in a limit of: 1000{nbsp}ticks/sec / 2 = 500{nbsp}[acronym]``IOPS``. Returning the pool to an <<_zfs_term_online,Online>> state may be more important if another device failing could <<_zfs_term_faulted,Fault>> the pool, causing data loss. A value of 0 will give the resilver operation the same priority as other operations, speeding the healing process. The speed of resilver is only limited when there has been other recent activity on the pool, as determined by <<_zfs_advanced_tuning_scan_idle,[var]``vfs.zfs.scan_idle``>>. This value can be adjusted at any time with  {{< manpage "sysctl" "8" >}} .
+* _[var]``__vfs.zfs.scan_idle__``_	    - Number of milliseconds since the last operation before the pool is considered idle. When the pool is idle the rate limiting for <<_zfs_term_scrub,[command]``scrub``>>	    and <<_zfs_term_resilver,resilver>> are disabled. This value can be adjusted at any time with  {{< manpage "sysctl" "8" >}} .
+* _[var]``__vfs.zfs.txg.timeout__``_	    - Maximum number of seconds between <<_zfs_term_txg,transaction group>>s. The current transaction group will be written to the pool and a fresh transaction group started if this amount of time has elapsed since the previous transaction group. A transaction group my be triggered earlier if enough data is written. The default value is 5 seconds. A larger value may improve read performance by delaying asynchronous writes, but this may cause uneven performance when the transaction group is written. This value can be adjusted at any time with  {{< manpage "sysctl" "8" >}} .
+
+
+[[_zfs_advanced_i386]]
+=== ZFS on i386
+
+
+Some of the features provided by [acronym]``ZFS``	are memory intensive, and may require tuning for maximum efficiency on systems with limited [acronym]``RAM``.
+
+==== Memory
+
+
+As a bare minimum, the total system memory should be at least one gigabyte.
+The amount of recommended [acronym]``RAM`` depends upon the size of the pool and which [acronym]``ZFS`` features are used.
+A general rule of thumb is 1{nbsp}GB of RAM for every 1{nbsp}TB of storage.
+If the deduplication feature is used, a general rule of thumb is 5{nbsp}GB of RAM per TB of storage to be deduplicated.
+While some users successfully use [acronym]``ZFS`` with less [acronym]``RAM``, systems under heavy load may panic due to memory exhaustion.
+Further tuning may be required for systems with less than the recommended RAM requirements.
+
+==== Kernel Configuration
+
+
+Due to the address space limitations of the i386(TM)
+ platform, [acronym]``ZFS`` users on the i386(TM)
+ architecture must add this option to a custom kernel configuration file, rebuild the kernel, and reboot:
+
+[source]
+----
+options        KVA_PAGES=512
+----
+
+
+This expands the kernel address space, allowing the [var]``vm.kvm_size`` tunable to be pushed beyond the currently imposed limit of 1{nbsp}GB, or the limit of 2{nbsp}GB for [acronym]``PAE``.
+To find the most suitable value for this option, divide the desired address space in megabytes by four.
+In this example, it is `512` for 2{nbsp}GB.
+
+==== Loader Tunables
+
+
+The [path]``kmem``
+ address space can be increased on all FreeBSD architectures.
+On a test system with 1{nbsp}GB of physical memory, success was achieved with these options added to [path]``/boot/loader.conf``
+, and the system restarted:
+
+[source]
+----
+vm.kmem_size="330M"
+vm.kmem_size_max="330M"
+vfs.zfs.arc_max="40M"
+vfs.zfs.vdev.cache.size="5M"
+----
+
+
+For a more detailed list of recommendations for [acronym]``ZFS``-related tuning, see https://wiki.freebsd.org/ZFSTuningGuide.
+
+[[_zfs_links]]
+== Additional Resources
+
+* https://wiki.freebsd.org/ZFS[FreeBSD Wiki - ZFS]
+* https://wiki.freebsd.org/ZFSTuningGuide[FreeBSD Wiki - ZFS Tuning]
+* http://wiki.illumos.org/display/illumos/ZFS[Illumos Wiki - ZFS]
+* http://docs.oracle.com/cd/E19253-01/819-5461/index.html[Oracle Solaris ZFS Administration Guide]
+* https://calomel.org/zfs_raid_speed_capacity.html[Calomel Blog - ZFS Raidz Performance, Capacity and Integrity]
+
+
+[[_zfs_term]]
+== ZFS Features and Terminology
+
+[acronym]``
+ZFS`` is a fundamentally different file system because it is more than just a file system. [acronym]``ZFS`` combines the roles of file system and volume manager, enabling additional storage devices to be added to a live system and having the new space available on all of the existing file systems in that pool immediately.
+By combining the traditionally separate roles, [acronym]``ZFS`` is able to overcome previous limitations that prevented [acronym]``RAID`` groups being able to grow.
+Each top level device in a pool is called a __vdev__, which can be a simple disk or a [acronym]``RAID`` transformation such as a mirror or [acronym]``RAID-Z`` array.
+ [acronym]``ZFS`` file systems (called __datasets__) each have access to the combined free space of the entire pool.
+As blocks are allocated from the pool, the space available to each file system decreases.
+This approach avoids the common pitfall with extensive partitioning where free space becomes fragmented across the partitions.
+
+[cols="1,1"]
+|===
+
+|pool
+|A storage _pool_ is the most
+	      basic building block of [acronym]``ZFS``.  A pool
+	      is made up of one or more vdevs, the underlying devices
+	      that store the data.  A pool is then used to create one
+	      or more file systems (datasets) or block devices
+	      (volumes).  These datasets and volumes share the pool of
+	      remaining free space.  Each pool is uniquely identified
+	      by a name and a [acronym]``GUID``.  The features
+	      available are determined by the [acronym]``ZFS``
+	      version number on the pool.
+	    
+
+|vdev{nbsp}Types
+|A pool is made up of one or more vdevs, which
+	      themselves can be a single disk or a group of disks, in
+	      the case of a [acronym]``RAID`` transform.  When
+	      multiple vdevs are used, [acronym]``ZFS`` spreads
+	      data across the vdevs to increase performance and
+	      maximize usable space.
+
+	      
+
+* _Disk_		    - The most basic type of vdev is a standard block device. This can be an entire disk (such as [path]``/dev/ada0`` or [path]``/dev/da0`` ) or a partition ([path]``/dev/ada0p3`` ). On FreeBSD, there is no performance penalty for using a partition rather than the entire disk. This differs from recommendations made by the Solaris documentation.
+* _File_		    - In addition to disks, [acronym]``ZFS``		    pools can be backed by regular files, this is especially useful for testing and experimentation. Use the full path to the file as the device path in [command]``zpool create``. All vdevs must be at least 128{nbsp}MB in size.
+* _Mirror_		    - When creating a mirror, specify the `mirror` keyword followed by the list of member devices for the mirror. A mirror consists of two or more devices, all data will be written to all member devices. A mirror vdev will only hold as much data as its smallest member. A mirror vdev can withstand the failure of all but one of its members without losing any data.
++
+NOTE: A regular single disk vdev can be upgraded to a mirror vdev at any time with [command]``zpool
+			<<_zfs_zpool_attach,attach>>``.
++
+
+* _[acronym]``__RAID-Z__``_		    - [acronym]``ZFS`` implements [acronym]``RAID-Z``, a variation on standard [acronym]``RAID-5`` that offers better distribution of parity and eliminates the "`[acronym]``RAID-5`` write hole`" in which the data and parity information become inconsistent after an unexpected restart. [acronym]``ZFS``		    supports three levels of [acronym]``RAID-Z``		    which provide varying levels of redundancy in exchange for decreasing levels of usable storage. The types are named [acronym]``RAID-Z1``		    through [acronym]``RAID-Z3`` based on the number of parity devices in the array and the number of disks which can fail while the pool remains operational.
++ 
+In a [acronym]``RAID-Z1`` configuration with four disks, each 1{nbsp}TB, usable storage is 3{nbsp}TB and the pool will still be able to operate in degraded mode with one faulted disk.
+If an additional disk goes offline before the faulted disk is replaced and resilvered, all data in the pool can be lost.
++ 
+In a [acronym]``RAID-Z3`` configuration with eight disks of 1{nbsp}TB, the volume will provide 5{nbsp}TB of usable space and still be able to operate with three faulted disks.
+Sun(TM)
+recommends no more than nine disks in a single vdev.
+If the configuration has more disks, it is recommended to divide them into separate vdevs and the pool data will be striped across them.
++ 
+A configuration of two [acronym]``RAID-Z2`` vdevs consisting of 8 disks each would create something similar to a [acronym]``RAID-60`` array.
+A [acronym]``RAID-Z`` group's storage capacity is approximately the size of the smallest disk multiplied by the number of non-parity disks.
+Four 1{nbsp}TB disks in [acronym]``RAID-Z1``		    has an effective size of approximately 3{nbsp}TB, and an array of eight 1{nbsp}TB disks in [acronym]``RAID-Z3`` will yield 5{nbsp}TB of usable space.
+* _Spare_		    - [acronym]``ZFS`` has a special pseudo-vdev type for keeping track of available hot spares. Note that installed hot spares are not deployed automatically; they must manually be configured to replace the failed device using [command]``zfs replace``.
+* _Log_		    - [acronym]``ZFS`` Log Devices, also known as [acronym]``ZFS`` Intent Log (<<_zfs_term_zil,[acronym]``ZIL``>>) move the intent log from the regular pool devices to a dedicated device, typically an [acronym]``SSD``. Having a dedicated log device can significantly improve the performance of applications with a high volume of synchronous writes, especially databases. Log devices can be mirrored, but [acronym]``RAID-Z`` is not supported. If multiple log devices are used, writes will be load balanced across them.
+* _Cache_		    - Adding a cache vdev to a pool will add the storage of the cache to the <<_zfs_term_l2arc,[acronym]``L2ARC``>>. Cache devices cannot be mirrored. Since a cache device only stores additional copies of existing data, there is no risk of data loss.
+
+
+|
+Transaction Group
+	      ([acronym]``TXG``)
+|Transaction Groups are the way changed blocks are
+	      grouped together and eventually written to the pool.
+	      Transaction groups are the atomic unit that
+	      [acronym]``ZFS`` uses to assert consistency.  Each
+	      transaction group is assigned a unique 64-bit
+	      consecutive identifier.  There can be up to three active
+	      transaction groups at a time, one in each of these three
+	      states:
+
+	      
+
+* _Open_ - When a new transaction group is created, it is in the open state, and accepts new writes. There is always a transaction group in the open state, however the transaction group may refuse new writes if it has reached a limit. Once the open transaction group has reached a limit, or the <<_zfs_advanced_tuning_txg_timeout,[var]``vfs.zfs.txg.timeout``>>		    has been reached, the transaction group advances to the next state.
+* _Quiescing_ - A short state that allows any pending operations to finish while not blocking the creation of a new open transaction group. Once all of the transactions in the group have completed, the transaction group advances to the final state.
+* _Syncing_ - All of the data in the transaction group is written to stable storage. This process will in turn modify other data, such as metadata and space maps, that will also need to be written to stable storage. The process of syncing involves multiple passes. The first, all of the changed data blocks, is the biggest, followed by the metadata, which may take multiple passes to complete. Since allocating space for the data blocks generates new metadata, the syncing state cannot finish until a pass completes that does not allocate any additional space. The syncing state is also where _synctasks_ are completed. Synctasks are administrative operations, such as creating or destroying snapshots and datasets, that modify the uberblock are completed. Once the sync state is complete, the transaction group in the quiescing state is advanced to the syncing state.
+
+
+
+	      All administrative functions, such as <<_zfs_term_snapshot,[command]``snapshot``>>
+	      are written as part of the transaction group.  When a
+	      synctask is created, it is added to the currently open
+	      transaction group, and that group is advanced as quickly
+	      as possible to the syncing state to reduce the
+	      latency of administrative commands.
+
+|Adaptive Replacement
+	      Cache ([acronym]``ARC``)
+|[acronym]``ZFS`` uses an Adaptive Replacement
+	      Cache ([acronym]``ARC``), rather than a more
+	      traditional Least Recently Used ([acronym]``LRU``)
+	      cache.  An [acronym]``LRU`` cache is a simple list
+	      of items in the cache, sorted by when each object was
+	      most recently used.  New items are added to the top of
+	      the list.  When the cache is full, items from the
+	      bottom of the list are evicted to make room for more
+	      active objects.  An [acronym]``ARC`` consists of
+	      four lists; the Most Recently Used
+	      ([acronym]``MRU``) and Most Frequently Used
+	      ([acronym]``MFU``) objects, plus a ghost list for
+	      each.  These ghost lists track recently evicted objects
+	      to prevent them from being added back to the cache.
+	      This increases the cache hit ratio by avoiding objects
+	      that have a history of only being used occasionally.
+	      Another advantage of using both an
+	      [acronym]``MRU`` and [acronym]``MFU`` is
+	      that scanning an entire file system would normally evict
+	      all data from an [acronym]``MRU`` or
+	      [acronym]``LRU`` cache in favor of this freshly
+	      accessed content.  With [acronym]``ZFS``, there is
+	      also an [acronym]``MFU`` that only tracks the most
+	      frequently used objects, and the cache of the most
+	      commonly accessed blocks remains.
+
+|[acronym]``L2ARC``
+|[acronym]``L2ARC`` is the second level
+	      of the [acronym]``ZFS`` caching system.  The
+	      primary [acronym]``ARC`` is stored in
+	      [acronym]``RAM``.  Since the amount of
+	      available [acronym]``RAM`` is often limited,
+	      [acronym]``ZFS`` can also use
+	      <<_zfs_term_vdev_cache,cache vdevs>>.
+	      Solid State Disks ([acronym]``SSD``s) are often
+	      used as these cache devices due to their higher speed
+	      and lower latency compared to traditional spinning
+	      disks.  [acronym]``L2ARC`` is entirely optional,
+	      but having one will significantly increase read speeds
+	      for files that are cached on the [acronym]``SSD``
+	      instead of having to be read from the regular disks.
+	      [acronym]``L2ARC`` can also speed up <<_zfs_term_deduplication,deduplication>>
+	      because a [acronym]``DDT`` that does not fit in
+	      [acronym]``RAM`` but does fit in the
+	      [acronym]``L2ARC`` will be much faster than a
+	      [acronym]``DDT`` that must be read from disk.  The
+	      rate at which data is added to the cache devices is
+	      limited to prevent prematurely wearing out
+	      [acronym]``SSD``s with too many writes.  Until the
+	      cache is full (the first block has been evicted to make
+	      room), writing to the [acronym]``L2ARC`` is
+	      limited to the sum of the write limit and the boost
+	      limit, and afterwards limited to the write limit.  A
+	      pair of  {{< manpage "sysctl" "8" >}}
+ values control these rate limits. <<_zfs_advanced_tuning_l2arc_write_max,[var]``vfs.zfs.l2arc_write_max``>>
+	      controls how many bytes are written to the cache per
+	      second, while <<_zfs_advanced_tuning_l2arc_write_boost,[var]``vfs.zfs.l2arc_write_boost``>>
+	      adds to this limit during the
+	      "`Turbo Warmup Phase`"
+ (Write Boost).
+
+|[acronym]``ZIL``
+|[acronym]``ZIL`` accelerates synchronous
+	      transactions by using storage devices like
+	      [acronym]``SSD``s that are faster than those used
+	      in the main storage pool.  When an application requests
+	      a synchronous write (a guarantee that the data has been
+	      safely stored to disk rather than merely cached to be
+	      written later), the data is written to the faster
+	      [acronym]``ZIL`` storage, then later flushed out
+	      to the regular disks.  This greatly reduces latency and
+	      improves performance.  Only synchronous workloads like
+	      databases will benefit from a [acronym]``ZIL``.
+	      Regular asynchronous writes such as copying files will
+	      not use the [acronym]``ZIL`` at all.
+
+|Copy-On-Write
+|Unlike a traditional file system, when data is
+	      overwritten on [acronym]``ZFS``, the new data is
+	      written to a different block rather than overwriting the
+	      old data in place.  Only when this write is complete is
+	      the metadata then updated to point to the new location.
+	      In the event of a shorn write (a system crash or power
+	      loss in the middle of writing a file), the entire
+	      original contents of the file are still available and
+	      the incomplete write is discarded.  This also means that
+	      [acronym]``ZFS`` does not require a  {{< manpage "fsck" "8" >}}
+
+	      after an unexpected shutdown.
+
+|Dataset
+|__Dataset__ is the generic term
+	      for a [acronym]``ZFS`` file system, volume,
+	      snapshot or clone.  Each dataset has a unique name in
+	      the format
+	      [replaceable]``poolname/path@snapshot``.
+	      The root of the pool is technically a dataset as well.
+	      Child datasets are named hierarchically like
+	      directories.  For example,
+	      [replaceable]``mypool/home``, the home
+	      dataset, is a child of [replaceable]``mypool``
+	      and inherits properties from it.  This can be expanded
+	      further by creating
+	      [replaceable]``mypool/home/user``.  This
+	      grandchild dataset will inherit properties from the
+	      parent and grandparent.  Properties on a child can be
+	      set to override the defaults inherited from the parents
+	      and grandparents.  Administration of datasets and their
+	      children can be
+	      <<_zfs_zfs_allow,delegated>>.
+
+|File system
+|A [acronym]``ZFS`` dataset is most often used
+	      as a file system.  Like most other file systems, a
+	      [acronym]``ZFS`` file system is mounted somewhere
+	      in the systems directory hierarchy and contains files
+	      and directories of its own with permissions, flags, and
+	      other metadata.
+
+|Volume
+|In additional to regular file system datasets,
+	      [acronym]``ZFS`` can also create volumes, which
+	      are block devices.  Volumes have many of the same
+	      features, including copy-on-write, snapshots, clones,
+	      and checksumming.  Volumes can be useful for running
+	      other file system formats on top of
+	      [acronym]``ZFS``, such as [acronym]``UFS``
+	      virtualization, or exporting [acronym]``iSCSI``
+	      extents.
+
+|Snapshot
+|The
+	      <<_zfs_term_cow,copy-on-write>>
+	      ([acronym]``COW``) design of
+	      [acronym]``ZFS`` allows for nearly instantaneous,
+	      consistent snapshots with arbitrary names.  After taking
+	      a snapshot of a dataset, or a recursive snapshot of a
+	      parent dataset that will include all child datasets, new
+	      data is written to new blocks, but the old blocks are
+	      not reclaimed as free space.  The snapshot contains
+	      the original version of the file system, and the live
+	      file system contains any changes made since the snapshot
+	      was taken.  No additional space is used.  As new data is
+	      written to the live file system, new blocks are
+	      allocated to store this data.  The apparent size of the
+	      snapshot will grow as the blocks are no longer used in
+	      the live file system, but only in the snapshot.  These
+	      snapshots can be mounted read only to allow for the
+	      recovery of previous versions of files.  It is also
+	      possible to
+	      <<_zfs_zfs_snapshot,rollback>> a live
+	      file system to a specific snapshot, undoing any changes
+	      that took place after the snapshot was taken.  Each
+	      block in the pool has a reference counter which keeps
+	      track of how many snapshots, clones, datasets, or
+	      volumes make use of that block.  As files and snapshots
+	      are deleted, the reference count is decremented.  When a
+	      block is no longer referenced, it is reclaimed as free
+	      space.  Snapshots can also be marked with a
+	      <<_zfs_zfs_snapshot,hold>>.  When a
+	      snapshot is held, any attempt to destroy it will return
+	      an `EBUSY` error.  Each snapshot can
+	      have multiple holds, each with a unique name.  The
+	      <<_zfs_zfs_snapshot,release>> command
+	      removes the hold so the snapshot can deleted.  Snapshots
+	      can be taken on volumes, but they can only be cloned or
+	      rolled back, not mounted independently.
+
+|Clone
+|Snapshots can also be cloned.  A clone is a
+	      writable version of a snapshot, allowing the file system
+	      to be forked as a new dataset.  As with a snapshot, a
+	      clone initially consumes no additional space.  As
+	      new data is written to a clone and new blocks are
+	      allocated, the apparent size of the clone grows.  When
+	      blocks are overwritten in the cloned file system or
+	      volume, the reference count on the previous block is
+	      decremented.  The snapshot upon which a clone is based
+	      cannot be deleted because the clone depends on it.  The
+	      snapshot is the parent, and the clone is the child.
+	      Clones can be __promoted__, reversing
+	      this dependency and making the clone the parent and the
+	      previous parent the child.  This operation requires no
+	      additional space.  Because the amount of space used by
+	      the parent and child is reversed, existing quotas and
+	      reservations might be affected.
+
+|Checksum
+|Every block that is allocated is also checksummed.
+	      The checksum algorithm used is a per-dataset property,
+	      see <<_zfs_zfs_set,[command]``set``>>.
+	      The checksum of each block is transparently validated as
+	      it is read, allowing [acronym]``ZFS`` to detect
+	      silent corruption.  If the data that is read does not
+	      match the expected checksum, [acronym]``ZFS`` will
+	      attempt to recover the data from any available
+	      redundancy, like mirrors or [acronym]``RAID-Z``).
+	      Validation of all checksums can be triggered with <<_zfs_term_scrub,[command]``scrub``>>.
+	      Checksum algorithms include:
+
+	      
+
+* `fletcher2`
+* `fletcher4`
+* `sha256`
+
+
+
+	      The `fletcher` algorithms are faster,
+	      but `sha256` is a strong cryptographic
+	      hash and has a much lower chance of collisions at the
+	      cost of some performance.  Checksums can be disabled,
+	      but it is not recommended.
+
+|Compression
+|Each dataset has a compression property, which
+	      defaults to off.  This property can be set to one of a
+	      number of compression algorithms.  This will cause all
+	      new data that is written to the dataset to be
+	      compressed.  Beyond a reduction in space used, read and
+	      write throughput often increases because fewer blocks
+	      are read or written.
+
+	      
+
+
+[[_zfs_term_compression_lz4]]
+* _[acronym]``__LZ4__``_ - Added in [acronym]``ZFS`` pool version 5000 (feature flags), [acronym]``LZ4`` is now the recommended compression algorithm. [acronym]``LZ4`` compresses approximately 50% faster than [acronym]``LZJB`` when operating on compressible data, and is over three times faster when operating on uncompressible data. [acronym]``LZ4`` also decompresses approximately 80% faster than [acronym]``LZJB``. On modern [acronym]``CPU``s, [acronym]``LZ4``		    can often compress at over 500{nbsp}MB/s, and decompress at over 1.5{nbsp}GB/s (per single CPU core).
+[[_zfs_term_compression_lzjb]]
+* _[acronym]``__LZJB__``_ - The default compression algorithm. Created by Jeff Bonwick (one of the original creators of [acronym]``ZFS``).  [acronym]``LZJB``		    offers good compression with less [acronym]``CPU`` overhead compared to [acronym]``GZIP``. In the future, the default compression algorithm will likely change to [acronym]``LZ4``.
+[[_zfs_term_compression_gzip]]
+* _[acronym]``__GZIP__``_ - A popular stream compression algorithm available in [acronym]``ZFS``. One of the main advantages of using [acronym]``GZIP`` is its configurable level of compression. When setting the `compress` property, the administrator can choose the level of compression, ranging from ``gzip1``, the lowest level of compression, to ``gzip9``, the highest level of compression. This gives the administrator control over how much [acronym]``CPU`` time to trade for saved disk space.
+[[_zfs_term_compression_zle]]
+* _[acronym]``__ZLE__``_ - Zero Length Encoding is a special compression algorithm that only compresses continuous runs of zeros. This compression algorithm is only useful when the dataset contains large blocks of zeros.
+
+
+|
+Copies
+|When set to a value greater than 1, the
+	      `copies` property instructs
+	      [acronym]``ZFS`` to maintain multiple copies of
+	      each block in the
+	      <<_zfs_term_filesystem,File System>>
+	      or
+	      <<_zfs_term_volume,Volume>>.  Setting
+	      this property on important datasets provides additional
+	      redundancy from which to recover a block that does not
+	      match its checksum.  In pools without redundancy, the
+	      copies feature is the only form of redundancy.  The
+	      copies feature can recover from a single bad sector or
+	      other forms of minor corruption, but it does not protect
+	      the pool from the loss of an entire disk.
+
+|Deduplication
+|Checksums make it possible to detect duplicate
+	      blocks of data as they are written.  With deduplication,
+	      the reference count of an existing, identical block is
+	      increased, saving storage space.  To detect duplicate
+	      blocks, a deduplication table ([acronym]``DDT``)
+	      is kept in memory.  The table contains a list of unique
+	      checksums, the location of those blocks, and a reference
+	      count.  When new data is written, the checksum is
+	      calculated and compared to the list.  If a match is
+	      found, the existing block is used.  The
+	      [acronym]``SHA256`` checksum algorithm is used
+	      with deduplication to provide a secure cryptographic
+	      hash.  Deduplication is tunable.  If
+	      `dedup` is ``on``, then
+	      a matching checksum is assumed to mean that the data is
+	      identical.  If `dedup` is set to
+	      ``verify``, then the data in the two
+	      blocks will be checked byte-for-byte to ensure it is
+	      actually identical.  If the data is not identical, the
+	      hash collision will be noted and the two blocks will be
+	      stored separately.  Because [acronym]``DDT`` must
+	      store the hash of each unique block, it consumes a very
+	      large amount of memory.  A general rule of thumb is
+	      5-6{nbsp}GB of ram per 1{nbsp}TB of deduplicated data).
+	      In situations where it is not practical to have enough
+	      [acronym]``RAM`` to keep the entire
+	      [acronym]``DDT`` in memory, performance will
+	      suffer greatly as the [acronym]``DDT`` must be
+	      read from disk before each new block is written.
+	      Deduplication can use [acronym]``L2ARC`` to store
+	      the [acronym]``DDT``, providing a middle ground
+	      between fast system memory and slower disks.  Consider
+	      using compression instead, which often provides nearly
+	      as much space savings without the additional memory
+	      requirement.
+
+|Scrub
+|Instead of a consistency check like  {{< manpage "fsck" "8" >}}
+, [acronym]``ZFS`` has [command]``scrub``.
+	      [command]``scrub`` reads all data blocks stored on
+	      the pool and verifies their checksums against the known
+	      good checksums stored in the metadata.  A periodic check
+	      of all the data stored on the pool ensures the recovery
+	      of any corrupted blocks before they are needed.  A scrub
+	      is not required after an unclean shutdown, but is
+	      recommended at least once every three months.  The
+	      checksum of each block is verified as blocks are read
+	      during normal use, but a scrub makes certain that even
+	      infrequently used blocks are checked for silent
+	      corruption.  Data security is improved, especially in
+	      archival storage situations.  The relative priority of
+	      [command]``scrub`` can be adjusted with <<_zfs_advanced_tuning_scrub_delay,[var]``vfs.zfs.scrub_delay``>>
+	      to prevent the scrub from degrading the performance of
+	      other workloads on the pool.
+
+|Dataset Quota
+|[acronym]``ZFS`` provides very fast and
+	      accurate dataset, user, and group space accounting in
+	      addition to quotas and space reservations.  This gives
+	      the administrator fine grained control over how space is
+	      allocated and allows space to be reserved for critical
+	      file systems.
+
+	      
+
+[acronym]``ZFS`` supports different types of quotas: the dataset quota, the <<_zfs_term_refquota,reference
+		  quota ([acronym]``refquota``)>>, the <<_zfs_term_userquota,user
+		  quota>>, and the <<_zfs_term_groupquota,group
+		  quota>>.
+
+Quotas limit the amount of space that a dataset and all of its descendants, including snapshots of the dataset, child datasets, and the snapshots of those datasets, can consume.
+
+[NOTE]
+====
+Quotas cannot be set on volumes, as the `volsize` property acts as an implicit quota.
+====
+
+|
+Reference
+	      Quota
+|A reference quota limits the amount of space a
+	      dataset can consume by enforcing a hard limit.  However,
+	      this hard limit includes only space that the dataset
+	      references and does not include space used by
+	      descendants, such as file systems or snapshots.
+
+|User
+	      Quota
+|User quotas are useful to limit the amount of space
+	      that can be used by the specified user.
+
+|Group
+	      Quota
+|The group quota limits the amount of space that a
+	      specified group can consume.
+
+|Dataset
+	      Reservation
+|The `reservation` property makes
+	      it possible to guarantee a minimum amount of space for a
+	      specific dataset and its descendants.  If a 10{nbsp}GB
+	      reservation is set on
+	      [path]``storage/home/bob``
+, and another
+	      dataset tries to use all of the free space, at least
+	      10{nbsp}GB of space is reserved for this dataset.  If a
+	      snapshot is taken of [path]``storage/home/bob``
+, the space used by
+	      that snapshot is counted against the reservation.  The <<_zfs_term_refreservation,`refreservation`>>
+	      property works in a similar way, but it
+	      _excludes_ descendants like
+	      snapshots.
+
+	      
+
+Reservations of any sort are useful in many situations, such as planning and testing the suitability of disk space allocation in a new system, or ensuring that enough space is available on file systems for audio logs or system recovery procedures and files.
+
+|Reference
+	      Reservation
+|The `refreservation` property
+	      makes it possible to guarantee a minimum amount of
+	      space for the use of a specific dataset
+	      _excluding_ its descendants.  This
+	      means that if a 10{nbsp}GB reservation is set on
+	      [path]``storage/home/bob``
+, and another
+	      dataset tries to use all of the free space, at least
+	      10{nbsp}GB of space is reserved for this dataset.  In
+	      contrast to a regular <<_zfs_term_reservation,reservation>>,
+	      space used by snapshots and descendant datasets is not
+	      counted against the reservation.  For example, if a
+	      snapshot is taken of
+	      [path]``storage/home/bob``
+, enough disk space
+	      must exist outside of the `refreservation` amount for the
+	      operation to succeed.  Descendants of the main data set
+	      are not counted in the `refreservation`
+	      amount and so do not encroach on the space set.
+
+|Resilver
+|When a disk fails and is replaced, the new disk
+	      must be filled with the data that was lost.  The process
+	      of using the parity information distributed across the
+	      remaining drives to calculate and write the missing data
+	      to the new drive is called
+	      __resilvering__.
+
+|Online
+|A pool or vdev in the `Online`
+	      state has all of its member devices connected and fully
+	      operational.  Individual devices in the
+	      `Online` state are functioning
+	      normally.
+
+|Offline
+|Individual devices can be put in an
+	      `Offline` state by the administrator if
+	      there is sufficient redundancy to avoid putting the pool
+	      or vdev into a
+	      <<_zfs_term_faulted,Faulted>> state.
+	      An administrator may choose to offline a disk in
+	      preparation for replacing it, or to make it easier to
+	      identify.
+
+|Degraded
+|A pool or vdev in the `Degraded`
+	      state has one or more disks that have been disconnected
+	      or have failed.  The pool is still usable, but if
+	      additional devices fail, the pool could become
+	      unrecoverable.  Reconnecting the missing devices or
+	      replacing the failed disks will return the pool to an
+	      <<_zfs_term_online,Online>> state
+	      after the reconnected or new device has completed the
+	      <<_zfs_term_resilver,Resilver>>
+	      process.
+
+|Faulted
+|A pool or vdev in the `Faulted`
+	      state is no longer operational.  The data on it can no
+	      longer be accessed.  A pool or vdev enters the
+	      `Faulted` state when the number of
+	      missing or failed devices exceeds the level of
+	      redundancy in the vdev.  If missing devices can be
+	      reconnected, the pool will return to a
+	      <<_zfs_term_online,Online>> state.  If
+	      there is insufficient redundancy to compensate for the
+	      number of failed disks, then the contents of the pool
+	      are lost and must be restored from backups.
+|===
